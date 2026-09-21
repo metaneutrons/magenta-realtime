@@ -37,6 +37,13 @@ Requires a paid Apple Developer Program membership. One-time setup:
    ```
    The profile name (`notarytool-creds`) is the default; override with `-DNOTARYTOOL_KEYCHAIN_PROFILE=<name>` if you've used a different one.
 
+   Alternatively, non-interactive release jobs can use an App Store Connect API
+   key. Export `APPLE_API_KEY`, `APPLE_API_ISSUER`, and
+   `APPLE_API_KEY_CONTENT` (the PEM contents of the private key). The release
+   scripts create a mode-`0600` temporary key file only for `notarytool` and
+   delete it immediately after the submission. API-key variables take
+   precedence over a keychain profile.
+
 ### 1. Build & Notarize Everything (All-in-One Script)
 
 For an automated script that compiles, signs, notarizes, and packages all applications, AUv3 plugins, and audio host externals (Max MSP, Pure Data, SuperCollider) in one go:
@@ -71,6 +78,15 @@ uv run cmake --build build --target notarize_mrt2_au          # AUv3 Plugin
 uv run cmake --build build --target notarize_mrt2_standalone  # Standalone App
 uv run cmake --build build --target notarize_mrt2_jam         # Jam App
 uv run cmake --build build --target notarize_mrt2_collider    # Collider App
+```
+
+If the signing identity is supplied as `MACOS_CERT_P12` (base64 PKCS#12) and
+`MACOS_CERT_PASSWORD`, run an individual CMake target through the temporary
+keychain wrapper instead:
+
+```bash
+bash examples/scripts/with-signing-keychain.sh \
+    uv run cmake --build build --target notarize_mrt2_au
 ```
 
 *(Note: If you want to pin a specific identity to a single build folder without exporting an environment variable, pass `-DCODESIGN_IDENTITY="..."` to CMake instead.)*

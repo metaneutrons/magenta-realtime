@@ -17,9 +17,15 @@ set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../../common/assets/AppIcon.icns")
 set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 set(PRESET_CATALOG "${CMAKE_CURRENT_SOURCE_DIR}/../../common/preset_catalog.json")
 set_source_files_properties(${PRESET_CATALOG} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PRESET_CATALOG}")
+file(READ "${PRESET_CATALOG}" PRESET_CATALOG_JSON)
+set(PRESET_CATALOG_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/PresetCatalogData.mm")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/PresetCatalogData.mm.in"
+    "${PRESET_CATALOG_SOURCE}" @ONLY)
 
 add_executable(mrt2_au MACOSX_BUNDLE
     MagentaRT_AudioUnit.mm
+    "${PRESET_CATALOG_SOURCE}"
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/cpp/magenta_paths.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/objc/MagentaModelManager.mm
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/objc/MagentaModelDownloader.mm

@@ -2,7 +2,8 @@
 # Copyright 2026 Google LLC
 
 # Script to notarize all MRT projects and externals into separate ZIP files.
-# Requires a pre-configured notarytool keychain profile (default name: "notarytool-creds").
+# Authenticates with App Store Connect API variables when available, otherwise
+# with a pre-configured notarytool keychain profile (default: "notarytool-creds").
 
 set -e
 
@@ -10,6 +11,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CMAKE_CMD="$REPO_ROOT/.venv/bin/cmake"
 BUILD_DIR="$REPO_ROOT/build"
+
+# A base64 PKCS#12 certificate can be supplied through the environment for a
+# non-interactive release. Re-exec under the temporary keychain only once.
+if [[ "${MAGENTART_SIGNING_KEYCHAIN_READY:-}" != "1" &&
+      -n "${MACOS_CERT_P12:-}" && -n "${MACOS_CERT_PASSWORD:-}" ]]; then
+    exec bash "$SCRIPT_DIR/with-signing-keychain.sh" "$0" "$@"
+fi
 
 KEYCHAIN_PROFILE="notarytool-creds"
 while [[ "$#" -gt 0 ]]; do
@@ -23,15 +31,6 @@ done
 echo "================================================================================"
 echo "Notarizing all MRT targets using profile: $KEYCHAIN_PROFILE"
 echo "================================================================================"
-
-# Verify keychain credentials exist
-if ! xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
-    echo "ERROR: Keychain profile '$KEYCHAIN_PROFILE' not found or credentials invalid."
-    echo "Please set it up first by running:"
-    echo "  xcrun notarytool store-credentials \"$KEYCHAIN_PROFILE\" \\"
-    echo "      --apple-id \"<AppleID>\" --team-id <TEAMID> --password <app-specific-password>"
-    exit 1
-fi
 
 notarize_cmake_target() {
     local target=$1
@@ -69,7 +68,7 @@ notarize_manual_bundle() {
     ditto -c -k --keepParent "$source_path" "$zip_path"
 
     echo "Submitting to Apple Notary Service..."
-    xcrun notarytool submit "$zip_path" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+    bash "$SCRIPT_DIR/notarytool-submit.sh" "$zip_path" "$KEYCHAIN_PROFILE"
 
     if [ "$is_bundle" = "true" ]; then
         echo "Stapling notarization ticket to bundle..."

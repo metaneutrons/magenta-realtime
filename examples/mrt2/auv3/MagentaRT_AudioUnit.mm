@@ -22,6 +22,7 @@
 #import "MagentaModelDownloader.h"
 #include "magenta_paths.h"
 #include "audio_level_processor.h"
+#include <cstring>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -56,15 +57,14 @@ static BOOL isDevServerRunning(void) {
 @property (nonatomic, strong) NSMutableArray* logHistory;
 @end
 
-static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
-    NSBundle* bundle = [NSBundle bundleForClass:[MagentaRTAudioUnit class]];
-    NSString* path = [bundle pathForResource:@"preset_catalog" ofType:@"json"];
-    if (!path) {
-        NSLog(@"MagentaRT_AU: preset_catalog.json is missing from the extension bundle.");
-        return @[];
-    }
+// Defined in a build-generated source file from the shared JSON catalog. It
+// avoids a bundle resource lookup, which is unreliable when AUv3 runs in an
+// XPC hosting process.
+extern const char kMagentaPresetCatalogJSON[];
 
-    NSData* data = [NSData dataWithContentsOfFile:path];
+static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
+    NSData* data = [NSData dataWithBytes:kMagentaPresetCatalogJSON
+                                   length:std::strlen(kMagentaPresetCatalogJSON)];
     NSError* error = nil;
     id payload = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
     if (![payload isKindOfClass:[NSDictionary class]]) {
@@ -116,6 +116,7 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     AUAudioUnitBus* _outputBus;
     AUAudioUnitBusArray* _outputBusArray;
     NSArray<AUAudioUnitPreset*>* _factoryPresets;
+    AUAudioUnitPreset* _currentPreset;
     BOOL _modelLoaded;
     AudioConverterRef _resampler;
     float* _resampleBufferL;
@@ -136,12 +137,14 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     magentart::common::AudioLevelProcessor _levelProcessor;
 }
 
+@synthesize factoryPresets = _factoryPresets;
+
 // Fallback init — the extension system may call plain init before the factory method.
 // Redirect to the designated initializer with our registered component description.
 - (instancetype)init {
     AudioComponentDescription desc = {
         .componentType = kAudioUnitType_MusicDevice,
-        .componentSubType = 'MGRT',
+        .componentSubType = 'MGR2',
         .componentManufacturer = 'Goog',
         .componentFlags = 0,
         .componentFlagsMask = 0
@@ -381,6 +384,11 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 
     self.maximumFramesToRender = 4096;
 
+    // Publish an initial preset as well as the catalog. The AUv3-to-v2 bridge
+    // uses currentPreset while serving kAudioUnitProperty_PresentPreset.
+    // Keeping this state ourselves follows Apple's AUv3 reference pattern.
+    self.currentPreset = _factoryPresets.firstObject;
+
     return self;
 }
 
@@ -474,10 +482,6 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 
 // --- Presets ------------------------------------------------------------------
 
-- (NSArray<AUAudioUnitPreset*>*)factoryPresets {
-    return _factoryPresets;
-}
-
 - (BOOL)supportsUserPresets {
     return YES;
 }
@@ -528,7 +532,7 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 - (void)setCurrentPreset:(AUAudioUnitPreset*)preset {
     if (!preset) {
         self.activePresetIdentifier = nil;
-        [super setCurrentPreset:nil];
+        _currentPreset = nil;
         return;
     }
 
@@ -537,7 +541,7 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
             NSLog(@"MagentaRT_AU: unknown factory preset number %ld.", (long)preset.number);
             return;
         }
-        [super setCurrentPreset:preset];
+        _currentPreset = [preset copy];
         return;
     }
 
@@ -549,7 +553,11 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     }
     [self setFullState:state];
     self.activePresetIdentifier = nil;
-    [super setCurrentPreset:preset];
+    _currentPreset = [preset copy];
+}
+
+- (AUAudioUnitPreset*)currentPreset {
+    return _currentPreset;
 }
 
 // --- State Serialization ------------------------------------------------------

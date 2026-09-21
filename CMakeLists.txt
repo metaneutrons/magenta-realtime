@@ -198,8 +198,8 @@ function(magentart_add_notarize_target target_name)
         DEPENDS ${N_DEPENDS}
         ${prep_commands}
         COMMAND ditto -c -k "${staging_dir}" "${zip_path}"
-        COMMAND xcrun notarytool submit "${zip_path}"
-            --keychain-profile "${NOTARYTOOL_KEYCHAIN_PROFILE}" --wait
+        COMMAND bash "${CMAKE_SOURCE_DIR}/examples/scripts/notarytool-submit.sh"
+            "${zip_path}" "${NOTARYTOOL_KEYCHAIN_PROFILE}"
         COMMAND xcrun stapler staple "${N_APP}"
         COMMAND xcrun stapler validate "${N_APP}"
         # Re-zip the stapled bundle for distribution.

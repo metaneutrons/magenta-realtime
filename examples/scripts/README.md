@@ -56,6 +56,16 @@ This script builds, signs with Hardened Runtime, and submits all projects to App
        --password <Your-App-Specific-Password>
    ```
 
+   For CI or another non-interactive environment, export `APPLE_API_KEY`,
+   `APPLE_API_ISSUER`, and `APPLE_API_KEY_CONTENT` instead. The scripts use
+   those App Store Connect API credentials directly and do not write them to
+   the repository or a persistent keychain.
+
+   When the Developer ID certificate is supplied as base64 PKCS#12 through
+   `MACOS_CERT_P12` and `MACOS_CERT_PASSWORD`, `notarize-all.sh` automatically
+   imports it into a temporary keychain for the duration of the release and
+   removes that keychain afterward.
+
 ### Usage
 
 ```bash
