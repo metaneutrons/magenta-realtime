@@ -92,3 +92,23 @@ bash examples/scripts/with-signing-keychain.sh \
 *(Note: If you want to pin a specific identity to a single build folder without exporting an environment variable, pass `-DCODESIGN_IDENTITY="..."` to CMake instead.)*
 
 Each `notarize_*` target automatically runs its corresponding `deploy_*` target to compile, sign (with hardened runtime + secure timestamp), submit the archive, and staple the approved ticket. The distributable zip will be generated in `build/` (e.g., `build/MRT2_AU.zip`).
+
+### Automated GitHub Releases
+
+Release Please creates a release pull request from Conventional Commits on
+`main`. Merging that pull request creates the GitHub release and starts the
+macOS release job in the same workflow. It builds, signs, notarizes, staples,
+and uploads the Standalone, AUv3, Jam, and Collider ZIP archives. The Python
+package is published through the existing PyPI trusted-publishing workflow.
+
+Configure these repository Actions secrets before merging the first release
+pull request. Their values correspond to the local variables described above:
+
+- `MACOS_CERT_P12`
+- `MACOS_CERT_PASSWORD`
+- `APPLE_API_KEY`
+- `APPLE_API_ISSUER`
+- `APPLE_API_KEY_CONTENT`
+
+The release workflow uses the repository-scoped `GITHUB_TOKEN`; it does not
+require a personal access token.

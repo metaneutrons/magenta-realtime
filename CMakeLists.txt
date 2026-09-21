@@ -38,7 +38,7 @@ set(CMAKE_OBJCXX_STANDARD 20)
 set(ABSL_INTERNAL_AT_LEAST_CXX20 ON CACHE BOOL "Force Abseil C++20 support")
 set(ABSL_PROPAGATE_CXX_STD ON)
 
-set(MAGENTART_VERSION "0.0.1")
+set(MAGENTART_VERSION "2.0.3") # x-release-please-version
 add_definitions(-DMAGENTART_VERSION="${MAGENTART_VERSION}")
 
 # Fetch Git SHA
@@ -159,9 +159,9 @@ endif()
 #
 # Zips the deployed bundle, submits it to Apple's notary service, and
 # staples the ticket. Requires CODESIGN_IDENTITY to be a real Developer ID
-# (not ad-hoc "-") so that the bundle is signed for hardened runtime, and a
-# keychain profile named ${NOTARYTOOL_KEYCHAIN_PROFILE} (see
-# `xcrun notarytool store-credentials`).
+# (not ad-hoc "-") so that the bundle is signed for hardened runtime. The
+# submission helper accepts either App Store Connect API credentials or a
+# notarytool keychain profile.
 function(magentart_add_notarize_target target_name)
     cmake_parse_arguments(N "" "APP;DEPENDS;ZIP_NAME" "EXTRA_FILES" ${ARGN})
     if(NOT N_APP OR NOT N_DEPENDS)
