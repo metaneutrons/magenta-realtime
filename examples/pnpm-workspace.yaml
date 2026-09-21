@@ -3,3 +3,11 @@ packages:
   - mrt2/react_ui
   - jam/ui
   - collider/ui
+
+# pnpm 12 treats dependency lifecycle scripts as unreviewed until explicitly
+# approved. These are required to build the checked-in TypeScript applications
+# and the local Git-hook binary; all other dependency build scripts stay denied.
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  lefthook: true
