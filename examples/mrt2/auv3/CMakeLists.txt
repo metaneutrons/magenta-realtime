@@ -15,6 +15,8 @@
 # ─── AUv3 Extension (.appex) — MRT2 ─────────────────────────────────────────────────
 set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../../common/assets/AppIcon.icns")
 set_source_files_properties(${APP_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+set(PRESET_CATALOG "${CMAKE_CURRENT_SOURCE_DIR}/../../common/preset_catalog.json")
+set_source_files_properties(${PRESET_CATALOG} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
 add_executable(mrt2_au MACOSX_BUNDLE
     MagentaRT_AudioUnit.mm
@@ -22,6 +24,7 @@ add_executable(mrt2_au MACOSX_BUNDLE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/objc/MagentaModelManager.mm
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/objc/MagentaModelDownloader.mm
     ${APP_ICON}
+    ${PRESET_CATALOG}
 )
 
 # Link NSExtensionMain as the entry point (no user-written main())

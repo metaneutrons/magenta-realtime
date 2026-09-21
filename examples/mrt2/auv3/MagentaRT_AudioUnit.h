@@ -28,12 +28,15 @@ using magentart::core::RealtimeRunner;
 @property (nonatomic, copy) NSString* musicCocaModelName;
 @property (nonatomic, copy) NSString* statePrefix;
 @property (nonatomic, assign) BOOL uiPlaying;
+@property (nonatomic, copy, readonly) NSArray<NSDictionary*>* presetCatalog;
+@property (nonatomic, copy, readonly, nullable) NSString* activePresetIdentifier;
 
 - (RealtimeRunner*)engine;
 - (void)pollOfflineState;
 - (void)setNoteOn:(uint8_t)note on:(BOOL)on;
 - (NSArray<NSNumber*>*)activeNotes;
 - (void)readAudioLevels:(float*)outLeft right:(float*)outRight;
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index;
 @end
 
 @interface MagentaRTViewController : AUViewController <AUAudioUnitFactory>

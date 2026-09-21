@@ -15,11 +15,13 @@
  */
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { ModelSelector, MidiSelector, ResourceOnboardingModal, AudioMeter, Knob, MagentaToggle, ALL_COLORS, TransportControls, TimingIndicator, PromptSurface, calculateWeights, ALL_SUGGESTIONS, DEFAULT_TEMPERATURE, DEFAULT_TOPK, DEFAULT_CFG_MUSICCOCA, DEFAULT_CFG_NOTES, DEFAULT_CFG_DRUMS, DEFAULT_VOLUME, DEFAULT_UNMASK_WIDTH, DEFAULT_BUFFER_SIZE } from '@magenta-rt/common';
+import { ModelSelector, MidiSelector, ResourceOnboardingModal, AudioMeter, Knob, MagentaToggle, MagentaDropdown, ALL_COLORS, TransportControls, TimingIndicator, PromptSurface, calculateWeights, MAGENTA_PRESETS, ALL_SUGGESTIONS, DEFAULT_TEMPERATURE, DEFAULT_TOPK, DEFAULT_CFG_MUSICCOCA, DEFAULT_CFG_NOTES, DEFAULT_CFG_DRUMS, DEFAULT_VOLUME, DEFAULT_UNMASK_WIDTH, DEFAULT_BUFFER_SIZE } from '@magenta-rt/common';
 import { MagentaSlider } from './components/MagentaSlider';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import type { PromptNode, ListenerNode, MidiSource } from '@magenta-rt/common';
 import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
+import ListSubheader from '@mui/material/ListSubheader';
 
 import { PromptRow } from './components/PromptRow';
 import Tooltip from '@mui/material/Tooltip';
@@ -143,6 +145,7 @@ export default function App() {
   const [localLoadingIndices, setLocalLoadingIndices] = useState<Set<number>>(new Set());
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
   const [modelName, setModelName] = useState("No model loaded");
   const [localModels, setLocalModels] = useState<string[]>([]);
@@ -463,6 +466,9 @@ export default function App() {
       }
       if (state.modelName !== undefined) setModelName(state.modelName);
       if (state.isPlaying !== undefined) setIsPlaying(state.isPlaying);
+      if (state.activePresetId !== undefined) {
+        setActivePresetId(typeof state.activePresetId === 'string' ? state.activePresetId : null);
+      }
       if (state.localModels !== undefined) setLocalModels(state.localModels);
       if (state.remoteModels !== undefined) {
         setRemoteModels(state.remoteModels);
@@ -628,6 +634,7 @@ export default function App() {
   }, [keyboardMidiEnabled]);
 
   const isDawPlaying = metrics.transportFlags >= 0 && (metrics.transportFlags & 2) !== 0;
+  const activePreset = MAGENTA_PRESETS.find((preset) => preset.id === activePresetId);
 
   return (
     <div style={{
@@ -691,7 +698,7 @@ export default function App() {
           overflow: 'hidden',
         }}>
 
-          {/* ── A: Header row — View Mode Switcher + ModelSelector ── */}
+          {/* ── A: Header row — View Mode Switcher + Presets + ModelSelector ── */}
           <div style={{
             display: 'flex',
             padding: '9px 16px',
@@ -776,6 +783,46 @@ export default function App() {
                 Surface
               </button>
             </div>
+
+            <MagentaDropdown
+              id="preset-selector-button"
+              label={activePreset ? `${activePreset.group}: ${activePreset.name}` : 'Presets'}
+              buttonSx={{
+                maxWidth: '176px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                color: '#FFF',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+              menuSx={{
+                '& .MuiPaper-root': {
+                  maxHeight: '360px',
+                  minWidth: '310px',
+                },
+              }}
+            >
+              {(['Jam', 'Solo'] as const).map((group) => [
+                <ListSubheader
+                  key={`${group}-header`}
+                  disableSticky
+                  sx={{ background: '#2e2e2e', color: 'var(--color-muted)', fontSize: '11px', lineHeight: '28px' }}
+                >
+                  {group}
+                </ListSubheader>,
+                ...MAGENTA_PRESETS.map((preset, index) => preset.group === group && (
+                  <MenuItem
+                    key={preset.id}
+                    selected={preset.id === activePresetId}
+                    onClick={() => postMessage({ type: 'selectFactoryPreset', index })}
+                    sx={{ fontSize: '12px' }}
+                  >
+                    {preset.name}
+                  </MenuItem>
+                )).filter(Boolean),
+              ])}
+            </MagentaDropdown>
 
             {/* ModelSelector */}
             <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>

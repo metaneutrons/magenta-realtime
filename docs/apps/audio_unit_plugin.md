@@ -37,3 +37,19 @@ points to an incorrect path, unregister the bad one with
 1. In **Ableton Live**, go to *Settings → Plug-Ins* and enable **"Use Audio Unit v3"**, then **"Rescan Plug-Ins"**.
 2. Load the MagentaRT instrument on a track.
 3. Click **"Load Model…"** and select the exported model *folder* (e.g. `~/Documents/Magenta/magenta-rt-v2/models/mrt2_base/`).
+
+## Presets
+
+The plug-in ships the Jam prompt library as AUv3 factory presets. They are
+available from both the plug-in's **Presets** menu and a DAW's native Audio
+Unit preset browser. The menu groups the library into **Jam** and **Solo**
+prompt suggestions.
+
+Factory presets change the prompt only. They deliberately do not restore a
+transformer bank, random state, or audio-prefill context, because those are
+time- and model-specific musical states rather than reusable sound designs.
+
+Use your DAW's normal Audio Unit **Save Preset** command for user presets. The
+plug-in serializes its prompt configuration, AU parameters, prompt surface,
+model bookmark, and loaded audio-prompt embeddings with the host project or
+user preset.

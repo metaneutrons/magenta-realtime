@@ -47,17 +47,75 @@ static BOOL isDevServerRunning(void) {
 }
 
 @interface MagentaRTAudioUnit ()
+@property (nonatomic, copy, readwrite) NSArray<NSDictionary*>* presetCatalog;
+@property (nonatomic, copy, readwrite, nullable) NSString* activePresetIdentifier;
+- (void)applyPromptsToEngine;
 #if MAGENTART_DEBUG_LOG
 @property (nonatomic, copy) void (^debugLogHandler)(NSString *);
 #endif
 @property (nonatomic, strong) NSMutableArray* logHistory;
 @end
 
+static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
+    NSBundle* bundle = [NSBundle bundleForClass:[MagentaRTAudioUnit class]];
+    NSString* path = [bundle pathForResource:@"preset_catalog" ofType:@"json"];
+    if (!path) {
+        NSLog(@"MagentaRT_AU: preset_catalog.json is missing from the extension bundle.");
+        return @[];
+    }
+
+    NSData* data = [NSData dataWithContentsOfFile:path];
+    NSError* error = nil;
+    id payload = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
+    if (![payload isKindOfClass:[NSDictionary class]]) {
+        NSLog(@"MagentaRT_AU: could not parse preset catalog: %@", error);
+        return @[];
+    }
+
+    NSDictionary* catalog = payload;
+    NSNumber* version = catalog[@"version"];
+    if (![version isKindOfClass:[NSNumber class]] || version.integerValue != 1) {
+        NSLog(@"MagentaRT_AU: unsupported preset catalog version: %@", version);
+        return @[];
+    }
+
+    NSArray* rawPresets = catalog[@"presets"];
+    if (![rawPresets isKindOfClass:[NSArray class]]) {
+        NSLog(@"MagentaRT_AU: preset catalog does not contain a presets array.");
+        return @[];
+    }
+
+    NSMutableArray<NSDictionary*>* presets = [NSMutableArray arrayWithCapacity:rawPresets.count];
+    for (id candidate in rawPresets) {
+        if (![candidate isKindOfClass:[NSDictionary class]]) continue;
+        NSDictionary* preset = candidate;
+        NSString* identifier = preset[@"id"];
+        NSString* name = preset[@"name"];
+        NSString* group = preset[@"group"];
+        NSString* prompt = preset[@"prompt"];
+        if (![identifier isKindOfClass:[NSString class]] || identifier.length == 0 ||
+            ![name isKindOfClass:[NSString class]] || name.length == 0 ||
+            ![group isKindOfClass:[NSString class]] || group.length == 0 ||
+            ![prompt isKindOfClass:[NSString class]] || prompt.length == 0) {
+            NSLog(@"MagentaRT_AU: ignoring malformed preset catalog entry.");
+            continue;
+        }
+        [presets addObject:@{
+            @"id": identifier,
+            @"name": name,
+            @"group": group,
+            @"prompt": prompt,
+        }];
+    }
+    return [presets copy];
+}
+
 @implementation MagentaRTAudioUnit {
     RealtimeRunner _engine;
     AUParameterTree* _parameterTree;
     AUAudioUnitBus* _outputBus;
     AUAudioUnitBusArray* _outputBusArray;
+    NSArray<AUAudioUnitPreset*>* _factoryPresets;
     BOOL _modelLoaded;
     AudioConverterRef _resampler;
     float* _resampleBufferL;
@@ -100,6 +158,16 @@ static BOOL isDevServerRunning(void) {
     if (!self) return nil;
 
     _modelLoaded = NO;
+    self.presetCatalog = LoadPresetCatalog();
+    NSMutableArray<AUAudioUnitPreset*>* factoryPresets =
+        [NSMutableArray arrayWithCapacity:self.presetCatalog.count];
+    [self.presetCatalog enumerateObjectsUsingBlock:^(NSDictionary* preset, NSUInteger index, BOOL* stop) {
+        AUAudioUnitPreset* factoryPreset = [[AUAudioUnitPreset alloc] init];
+        factoryPreset.number = (NSInteger)index;
+        factoryPreset.name = [NSString stringWithFormat:@"%@ — %@", preset[@"group"], preset[@"name"]];
+        [factoryPresets addObject:factoryPreset];
+    }];
+    _factoryPresets = [factoryPresets copy];
 
     for (int i = 0; i < 128; i++) {
         _midiNotes[i].store(false, std::memory_order_relaxed);
@@ -404,15 +472,98 @@ static BOOL isDevServerRunning(void) {
     return _parameterTree;
 }
 
+// --- Presets ------------------------------------------------------------------
+
+- (NSArray<AUAudioUnitPreset*>*)factoryPresets {
+    return _factoryPresets;
+}
+
+- (BOOL)supportsUserPresets {
+    return YES;
+}
+
+- (void)applyPromptsToEngine {
+    if (!self.prompts) return;
+
+    std::vector<std::string> texts;
+    std::vector<float> weights;
+    texts.reserve(self.prompts.count);
+    weights.reserve(self.prompts.count);
+    for (NSDictionary* prompt in self.prompts) {
+        NSString* text = prompt[@"text"];
+        NSNumber* weight = prompt[@"weight"];
+        BOOL valid = [text isKindOfClass:[NSString class]] && [weight isKindOfClass:[NSNumber class]];
+        texts.push_back(valid ? text.UTF8String : "");
+        weights.push_back(valid ? weight.floatValue : 0.0f);
+    }
+
+    _engine.set_text_prompts(texts, weights);
+    _engine.set_blend_weights(weights.data(), (int)weights.size());
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (int i = 0; i < (int)weights.size() && i < 6; ++i) {
+            AUParameter* weightParameter = [self->_parameterTree parameterWithAddress:10 + i];
+            if (weightParameter) [weightParameter setValue:weights[i] originator:nil];
+        }
+    });
+}
+
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.presetCatalog.count) return NO;
+
+    NSDictionary* descriptor = self.presetCatalog[(NSUInteger)index];
+    NSString* prompt = descriptor[@"prompt"];
+    if (![prompt isKindOfClass:[NSString class]] || prompt.length == 0) return NO;
+
+    self.prompts = @[@{
+        @"text": prompt,
+        @"weight": @1.0f,
+        @"isAudio": @NO,
+    }];
+    self.activePresetIdentifier = descriptor[@"id"];
+    [self applyPromptsToEngine];
+    return YES;
+}
+
+- (void)setCurrentPreset:(AUAudioUnitPreset*)preset {
+    if (!preset) {
+        self.activePresetIdentifier = nil;
+        [super setCurrentPreset:nil];
+        return;
+    }
+
+    if (preset.number >= 0) {
+        if (![self selectFactoryPresetAtIndex:preset.number]) {
+            NSLog(@"MagentaRT_AU: unknown factory preset number %ld.", (long)preset.number);
+            return;
+        }
+        [super setCurrentPreset:preset];
+        return;
+    }
+
+    NSError* error = nil;
+    NSDictionary* state = [self presetStateFor:preset error:&error];
+    if (!state) {
+        NSLog(@"MagentaRT_AU: could not load user preset %@: %@", preset.name, error);
+        return;
+    }
+    [self setFullState:state];
+    self.activePresetIdentifier = nil;
+    [super setCurrentPreset:preset];
+}
+
 // --- State Serialization ------------------------------------------------------
 
 - (void)applyCustomState:(NSDictionary<NSString *, id> *)state {
     if (state[@"MGRT_Prompts"]) self.prompts = state[@"MGRT_Prompts"];
     if (state[@"MGRT_ModelName"]) self.modelName = state[@"MGRT_ModelName"];
+    NSString* presetIdentifier = state[@"MGRT_ActivePresetIdentifier"];
+    self.activePresetIdentifier = [presetIdentifier isKindOfClass:[NSString class]] ? presetIdentifier : nil;
     self.musicCocaModelName = @"musiccoca";
     NSString *customResources = [[NSUserDefaults standardUserDefaults] stringForKey:@"MagentaRT_CustomResourcesPath"];
     std::string loadPathStr = customResources ? std::string(customResources.UTF8String) : magentart::paths::get_resources_dir();
     _engine.load_musiccoca_model(loadPathStr.c_str(), "musiccoca");
+    [self applyPromptsToEngine];
     if (state[@"MGRT_PromptSurface"]) self.promptSurfaceState = state[@"MGRT_PromptSurface"];
     if (state[@"MGRT_StatePrefix"]) self.statePrefix = state[@"MGRT_StatePrefix"];
 
@@ -467,26 +618,7 @@ static BOOL isDevServerRunning(void) {
                 dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                     BOOL success = self->_engine.load_model(mlxfnPath.UTF8String);
                     if (success) {
-                        if (self.prompts) {
-                            std::vector<std::string> std_texts;
-                            std::vector<float> std_weights;
-                            for (NSDictionary* p in self.prompts) {
-                                NSString* text = p[@"text"];
-                                NSNumber* weight = p[@"weight"];
-                                BOOL isValid = [text isKindOfClass:[NSString class]] && [weight isKindOfClass:[NSNumber class]];
-                                std_texts.push_back(isValid ? text.UTF8String : "");
-                                std_weights.push_back(isValid ? weight.floatValue : 0.0f);
-                            }
-                            self->_engine.set_text_prompts(std_texts, std_weights);
-                            self->_engine.set_blend_weights(std_weights.data(), (int)std_weights.size());
-                            // Sync to AU parameter tree
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                for (int i = 0; i < (int)std_weights.size() && i < 6; i++) {
-                                    AUParameter* wp = [self->_parameterTree parameterWithAddress:10 + i];
-                                    if (wp) [wp setValue:std_weights[i] originator:nil];
-                                }
-                            });
-                        }
+                        [self applyPromptsToEngine];
                         NSLog(@"MagentaRT_AU: Successfully auto-loaded model from bookmark.");
 
                         // Load SpectroStream encoder: model dir → external spectrostream → bundle
@@ -534,6 +666,7 @@ static BOOL isDevServerRunning(void) {
     if (self.modelBookmark) state[@"MGRT_ModelBookmark"] = self.modelBookmark;
     if (self.promptSurfaceState) state[@"MGRT_PromptSurface"] = self.promptSurfaceState;
     if (self.statePrefix) state[@"MGRT_StatePrefix"] = self.statePrefix;
+    if (self.activePresetIdentifier) state[@"MGRT_ActivePresetIdentifier"] = self.activePresetIdentifier;
 
     NSMutableDictionary* audioEmbeddings = [NSMutableDictionary dictionary];
     for (int i = 0; i < 6; ++i) {
@@ -561,6 +694,7 @@ static BOOL isDevServerRunning(void) {
     if (self.modelName) state[@"MGRT_ModelName"] = self.modelName;
     if (self.modelBookmark) state[@"MGRT_ModelBookmark"] = self.modelBookmark;
     if (self.promptSurfaceState) state[@"MGRT_PromptSurface"] = self.promptSurfaceState;
+    if (self.activePresetIdentifier) state[@"MGRT_ActivePresetIdentifier"] = self.activePresetIdentifier;
 
     NSMutableDictionary* audioEmbeddings = [NSMutableDictionary dictionary];
     for (int i = 0; i < 6; ++i) {
@@ -935,6 +1069,8 @@ static OSStatus ConverterDataProc(AudioConverterRef inAudioConverter,
     NSTimer* _metricsTimer;
     NSURL* _activeModelURL;
     NSMutableDictionary* _lastParams;
+    NSString* _lastActivePresetIdentifier;
+    BOOL _hasLastActivePresetIdentifier;
     int _metricsTicks;
     BOOL _weightChangeFromUI;  // set by textPrompts handler, cleared by polling loop
 
@@ -1072,6 +1208,8 @@ static NSString* bankFilePathAU(int index) {
     }
     _metricsTicks = 0;
     _lastParams = [NSMutableDictionary dictionary];
+    _lastActivePresetIdentifier = nil;
+    _hasLastActivePresetIdentifier = NO;
 
     _metricsTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/25.0
                                                     target:self
@@ -1117,6 +1255,15 @@ static NSString* bankFilePathAU(int index) {
         @"right": @(pR)
     };
     stateUpdate[@"activeNotes"] = [au activeNotes];
+
+    NSString* activePresetIdentifier = au.activePresetIdentifier;
+    if (!_hasLastActivePresetIdentifier ||
+        ![activePresetIdentifier isEqualToString:_lastActivePresetIdentifier]) {
+        stateUpdate[@"activePresetId"] = activePresetIdentifier ?: [NSNull null];
+        stateUpdate[@"textPrompts"] = au.prompts ?: @[];
+        _lastActivePresetIdentifier = activePresetIdentifier;
+        _hasLastActivePresetIdentifier = YES;
+    }
 
     if (_metricsTicks >= 5) {
         _metricsTicks = 0;
@@ -1293,6 +1440,7 @@ static BOOL paramIsBool(AUParameterAddress address) {
         }
 
         if (m_au.prompts) stateUpdate[@"textPrompts"] = m_au.prompts;
+        stateUpdate[@"activePresetId"] = m_au.activePresetIdentifier ?: [NSNull null];
         if (m_au.modelName) stateUpdate[@"modelName"] = m_au.modelName;
         if (m_au.promptSurfaceState) stateUpdate[@"prompt_surface"] = m_au.promptSurfaceState;
 
@@ -1450,28 +1598,25 @@ static BOOL paramIsBool(AUParameterAddress address) {
             if ([promptsArray isKindOfClass:[NSArray class]] && _audioUnit) {
                 MagentaRTAudioUnit* au = (MagentaRTAudioUnit*)_audioUnit;
                 au.prompts = promptsArray;
-                RealtimeRunner* engine = [au engine];
-                if (engine) {
-                    std::vector<std::string> std_texts;
-                    std::vector<float> std_weights;
-                    for (NSDictionary* p in promptsArray) {
-                        NSString* text = p[@"text"];
-                        NSNumber* weight = p[@"weight"];
-                        BOOL isValid = [text isKindOfClass:[NSString class]] && [weight isKindOfClass:[NSNumber class]];
-                        std_texts.push_back(isValid ? text.UTF8String : "");
-                        std_weights.push_back(isValid ? weight.floatValue : 0.0f);
-                    }
-                    engine->set_text_prompts(std_texts, std_weights);
-                    // Push explicit blend weights to the engine
-                    engine->set_blend_weights(std_weights.data(), (int)std_weights.size());
-                    // Flag so the polling loop knows this weight change came from the UI
-                    // (not DAW automation) and should not trigger a mode switch.
-                    _weightChangeFromUI = YES;
-                    // Sync weights to AU parameter tree so DAW knobs track UI changes
-                    for (int i = 0; i < (int)std_weights.size() && i < 6; i++) {
-                        AUParameter* wp = [au.parameterTree parameterWithAddress:10 + i];
-                        if (wp) [wp setValue:std_weights[i] originator:nil];
-                    }
+                [au applyPromptsToEngine];
+                // Flag so the polling loop knows this weight change came from the UI
+                // (not DAW automation) and should not trigger a mode switch.
+                _weightChangeFromUI = YES;
+            }
+        }
+        else if ([type isEqualToString:@"selectFactoryPreset"]) {
+            NSNumber* index = body[@"index"];
+            if ([index isKindOfClass:[NSNumber class]] &&
+                [_audioUnit isKindOfClass:[MagentaRTAudioUnit class]]) {
+                MagentaRTAudioUnit* au = (MagentaRTAudioUnit*)_audioUnit;
+                NSInteger presetIndex = index.integerValue;
+                NSArray<AUAudioUnitPreset*>* presets = au.factoryPresets;
+                if (presetIndex >= 0 && presetIndex < (NSInteger)presets.count) {
+                    au.currentPreset = presets[(NSUInteger)presetIndex];
+                    [self sendStateUpdate:@{
+                        @"activePresetId": au.activePresetIdentifier ?: [NSNull null],
+                        @"textPrompts": au.prompts ?: @[],
+                    }];
                 }
             }
         }

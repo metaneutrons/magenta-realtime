@@ -1,6 +1,9 @@
 {
   "name": "magenta-rt-v2-examples",
   "private": true,
+  "scripts": {
+    "verify:presets": "node common/verify_preset_catalog.mjs"
+  },
   "workspaces": [
     "common/react_ui",
     "mrt2/react_ui",
