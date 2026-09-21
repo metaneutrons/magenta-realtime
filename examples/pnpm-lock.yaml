@@ -172,9 +172,21 @@ importers:
 
   collider/ui:
     dependencies:
+      '@emotion/react':
+        specifier: ^11.13.5
+        version: 11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0)
+      '@emotion/styled':
+        specifier: ^11.13.5
+        version: 11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0)
       '@magenta-rt/common':
         specifier: workspace:*
         version: link:../../common/react_ui
+      '@mui/icons-material':
+        specifier: ^6.1.10
+        version: 6.5.0(@mui/material@6.5.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@types/react@18.3.31)(react@18.3.1)
+      '@mui/material':
+        specifier: ^6.1.10
+        version: 6.5.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       lil-gui:
         specifier: ^0.21.0
         version: 0.21.0
@@ -252,9 +264,21 @@ importers:
 
   jam/ui:
     dependencies:
+      '@emotion/react':
+        specifier: ^11.13.5
+        version: 11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0)
+      '@emotion/styled':
+        specifier: ^11.13.5
+        version: 11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0)
       '@magenta-rt/common':
         specifier: workspace:*
         version: link:../../common/react_ui
+      '@mui/icons-material':
+        specifier: ^6.1.10
+        version: 6.5.0(@mui/material@6.5.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@types/react@18.3.31)(react@18.3.1)
+      '@mui/material':
+        specifier: ^6.1.10
+        version: 6.5.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react@18.3.1)(supports-color@7.2.0))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       lucide-react:
         specifier: ^0.469.0
         version: 0.469.0(react@18.3.1)

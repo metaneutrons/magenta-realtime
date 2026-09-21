@@ -18,7 +18,11 @@
     "launch:dev": "npm run kill && npm run open"
   },
   "dependencies": {
+    "@emotion/react": "^11.13.5",
+    "@emotion/styled": "^11.13.5",
     "@magenta-rt/common": "workspace:*",
+    "@mui/icons-material": "^6.1.10",
+    "@mui/material": "^6.1.10",
     "lil-gui": "^0.21.0",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
