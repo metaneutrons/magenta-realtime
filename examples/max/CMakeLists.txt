@@ -148,3 +148,15 @@ add_custom_target(deploy_mrt2_max
     COMMENT "Deploying mrt2~.mxo to ${MAX_LIBRARY_DIR}"
     VERBATIM
 )
+
+magentart_add_notarize_payload_target(notarize_mrt2_max
+    SOURCE "$<TARGET_BUNDLE_DIR:mrt2_max>"
+    SOURCE_NAME "mrt2~.mxo"
+    DEPENDS mrt2_max
+    ZIP_NAME "MRT2_Max.zip"
+    STAPLE_PATH "$<TARGET_BUNDLE_DIR:mrt2_max>"
+    EXTRA_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/mrt2~.maxhelp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/INSTALL.md"
+)

@@ -48,8 +48,8 @@ dependencies = [
 # sequence_layers = { path = "magenta_rt/_vendor/sequence-layers", editable = true }
 
 [project.urls]
-Repository = "https://github.com/magenta/magenta-realtime"
-Issues = "https://github.com/magenta/magenta-realtime/issues"
+Repository = "https://github.com/metaneutrons/magenta-realtime"
+Issues = "https://github.com/metaneutrons/magenta-realtime/issues"
 
 # NOTE(vendoring): Once sequence-layers is on PyPI, add "sequence-layers[mlx]"
 # to mlx (recurrentgemma can then move back to jax-only).

@@ -538,6 +538,9 @@ export default function App() {
       delete window.updateState;
       window.removeEventListener('keydown', handleKeyDown);
     };
+  // The native bridge is registered exactly once. It deliberately captures the
+  // initial prompt defaults for the one-time synchronization guarded above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -631,7 +634,7 @@ export default function App() {
       window.removeEventListener('blur', handleBlur);
       handleBlur();
     };
-  }, [keyboardMidiEnabled]);
+  }, [keyboardMidiEnabled, handleOctaveDown, handleOctaveUp]);
 
   const isDawPlaying = metrics.transportFlags >= 0 && (metrics.transportFlags & 2) !== 0;
   const activePreset = MAGENTA_PRESETS.find((preset) => preset.id === activePresetId);

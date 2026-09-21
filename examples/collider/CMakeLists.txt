@@ -58,11 +58,11 @@ set_target_properties(mrt2_collider PROPERTIES
 
 # ─── Collider React UI Build Target ───────────────────────────────────────────
 add_custom_target(build_collider_ui ALL
-    COMMAND npm run build
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ui
+    COMMAND pnpm --filter collider-ui run build
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
     COMMENT "Building Collider UI..."
 )
-add_dependencies(build_collider_ui npm_install_root)
+add_dependencies(build_collider_ui pnpm_install_root)
 add_dependencies(mrt2_collider build_collider_ui)
 
 # ─── Deploy standalone app ───────────────────────────────────────────────────

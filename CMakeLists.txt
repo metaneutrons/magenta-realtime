@@ -18,6 +18,8 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum OS X deployment ver
 
 project(MagentaRT LANGUAGES C CXX OBJCXX)
 
+include(CTest)
+
 # macOS-only today: the inference stack depends on MLX (Metal), the
 # hosts use AppKit/AudioToolbox/CoreMIDI/WebKit, and we link `-framework
 # Metal / Accelerate / Foundation`. Fail fast rather than let the build
@@ -212,6 +214,74 @@ function(magentart_add_notarize_target target_name)
     )
 endfunction()
 
+# magentart_add_notarize_payload_target(<target_name>
+#     SOURCE <file-or-bundle> SOURCE_NAME <name-in-archive>
+#     DEPENDS <build-target> ZIP_NAME <name>.zip
+#     [PAYLOAD_DIRECTORY <directory-in-archive>]
+#     [STAPLE_PATH <bundle-to-staple>]
+#     [EXTRA_FILES <files-to-package>...])
+#
+# Produces a notarized distributable for plug-in formats that are not .app
+# bundles. SOURCE and EXTRA_FILES may use target generator expressions. A
+# STAPLE_PATH is supplied only for bundle formats that support stapling; the
+# signed Pd and SuperCollider modules rely on the notarized archive ticket.
+function(magentart_add_notarize_payload_target target_name)
+    cmake_parse_arguments(N "" "SOURCE;SOURCE_NAME;DEPENDS;ZIP_NAME;PAYLOAD_DIRECTORY;STAPLE_PATH"
+        "EXTRA_FILES" ${ARGN})
+    if(NOT N_SOURCE OR NOT N_SOURCE_NAME OR NOT N_DEPENDS OR NOT N_ZIP_NAME)
+        message(FATAL_ERROR
+            "magentart_add_notarize_payload_target: SOURCE, SOURCE_NAME, DEPENDS, and ZIP_NAME are required")
+    endif()
+
+    if(CODESIGN_IDENTITY STREQUAL "-")
+        add_custom_target(${target_name}
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "ERROR: ${target_name} requires a Developer ID. Reconfigure with -DCODESIGN_IDENTITY=\"Developer ID Application: Your Name (TEAMID)\""
+            COMMAND ${CMAKE_COMMAND} -E false
+            COMMENT "${target_name} disabled (CODESIGN_IDENTITY is ad-hoc)"
+        )
+        return()
+    endif()
+
+    set(zip_path "${CMAKE_BINARY_DIR}/${N_ZIP_NAME}")
+    set(staging_dir "${CMAKE_BINARY_DIR}/staging_${target_name}")
+    if(N_PAYLOAD_DIRECTORY)
+        set(payload_dir "${staging_dir}/${N_PAYLOAD_DIRECTORY}")
+    else()
+        set(payload_dir "${staging_dir}")
+    endif()
+
+    set(prep_commands)
+    list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E rm -rf "${staging_dir}")
+    list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E make_directory "${payload_dir}")
+    list(APPEND prep_commands COMMAND ditto "${N_SOURCE}" "${payload_dir}/${N_SOURCE_NAME}")
+    foreach(extra_file IN LISTS N_EXTRA_FILES)
+        list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E copy "${extra_file}" "${payload_dir}/")
+    endforeach()
+
+    set(staple_commands)
+    if(N_STAPLE_PATH)
+        list(APPEND staple_commands COMMAND xcrun stapler staple "${N_STAPLE_PATH}")
+        list(APPEND staple_commands COMMAND xcrun stapler validate "${N_STAPLE_PATH}")
+        # Repackage only after the ticket is inside the notarizable bundle.
+        list(APPEND staple_commands ${prep_commands})
+        list(APPEND staple_commands COMMAND ditto -c -k "${staging_dir}" "${zip_path}")
+    endif()
+
+    add_custom_target(${target_name}
+        DEPENDS ${N_DEPENDS}
+        ${prep_commands}
+        COMMAND ditto -c -k "${staging_dir}" "${zip_path}"
+        COMMAND bash "${CMAKE_SOURCE_DIR}/examples/scripts/notarytool-submit.sh"
+            "${zip_path}" "${NOTARYTOOL_KEYCHAIN_PROFILE}"
+        ${staple_commands}
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${staging_dir}"
+        COMMENT "Notarizing payload ${N_ZIP_NAME}"
+        USES_TERMINAL
+        VERBATIM
+    )
+endfunction()
+
 # Enable the AUv3 host's developer-only debug overlay (NSTextField in the
 # plugin UI) and mrt_debug.log file writer. Off by default for release builds.
 option(MAGENTART_DEBUG_LOG "Enable AUv3 debug overlay + mrt_debug.log file writer" OFF)
@@ -221,20 +291,20 @@ else()
     add_compile_definitions(MAGENTART_DEBUG_LOG=0)
 endif()
 
-# Run a unified npm workspaces install on the examples folder
-add_custom_target(npm_install_root
-    COMMAND npm install
+# Run a unified pnpm workspaces install on the examples folder
+add_custom_target(pnpm_install_root
+    COMMAND pnpm install --frozen-lockfile
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
-    COMMENT "Running NPM workspaces install inside examples..."
+    COMMENT "Running pnpm workspaces install inside examples..."
 )
 
 # React UI for the main MRT2 plugin.
 add_custom_target(build_mrt2_ui ALL
-    COMMAND npm run build
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples/mrt2/react_ui
+    COMMAND pnpm --filter magenta-rt-v2-ui run build
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
     COMMENT "Building MRT2 UI..."
 )
-add_dependencies(build_mrt2_ui npm_install_root)
+add_dependencies(build_mrt2_ui pnpm_install_root)
 
 # --- Project targets ----------------------------------------------------------
 add_subdirectory(core)

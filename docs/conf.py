@@ -59,7 +59,7 @@ html_static_path = ['_static']
 html_theme_options = {
     'show_navbar_depth': 1,
     'show_toc_level': 3,
-    'repository_url': 'https://github.com/magenta/magenta-realtime',
+    'repository_url': 'https://github.com/metaneutrons/magenta-realtime',
     'use_issues_button': True,
     'use_repository_button': True,
     'path_to_docs': 'docs/',

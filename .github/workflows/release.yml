@@ -1,0 +1,409 @@
+name: Build and publish notarized macOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable release tag created by Release Please.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  attestations: write
+  contents: write
+  id-token: write
+
+concurrency:
+  group: macos-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: macos-14
+    environment: release
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+    env:
+      TAG: ${{ inputs.tag }}
+      APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+      APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify release identity and publication credentials
+        id: identity
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] || {
+            echo "::error::Invalid release tag: $TAG"
+            exit 1
+          }
+          [[ "$(git rev-parse "$TAG^{}")" == "$(git rev-parse HEAD)" ]] || {
+            echo '::error::The checked-out commit does not match the release tag.'
+            exit 1
+          }
+          version="${TAG#v}"
+          version="${version%%-*}"
+          package_version="$(python3 -c 'import pathlib,re; print(re.search(r"__version__\\s*=\\s*\\\"([^\\\"]+)\\\"", pathlib.Path("magenta_rt/__init__.py").read_text()).group(1))')"
+          [[ "$version" == "$package_version" ]] || {
+            echo "::error::Tag core $version does not match package version $package_version."
+            exit 1
+          }
+          [[ "$APPLE_API_KEY" =~ ^[A-Z0-9]{10}$ ]] || {
+            echo '::error::APPLE_API_KEY must be a ten-character App Store Connect key ID.'
+            exit 1
+          }
+          [[ "$APPLE_API_ISSUER" =~ ^[0-9a-fA-F-]{36}$ ]] || {
+            echo '::error::APPLE_API_ISSUER must be a UUID.'
+            exit 1
+          }
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || {
+            echo '::error::APPLE_TEAM_ID must be a ten-character team ID.'
+            exit 1
+          }
+
+          temp_dir="$(mktemp -d)"
+          trap 'command rm -rf -- "$temp_dir"' EXIT
+          printf '%s' "$APPLE_CERT_P12_BASE64" | base64 -D > "$temp_dir/certificate.p12"
+          printf '%s' "$APPLE_API_KEY_CONTENT" | base64 -D > "$temp_dir/notary-key.p8"
+          openssl pkcs12 -in "$temp_dir/certificate.p12" -clcerts -nokeys \
+            -passin "pass:$APPLE_CERT_PASSWORD" \
+            | openssl x509 -noout -subject -nameopt RFC2253 \
+            | grep -F "OU=$APPLE_TEAM_ID"
+          openssl pkey -in "$temp_dir/notary-key.p8" -noout >/dev/null
+
+          draft_state="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          [[ "$draft_state" == true ]] || {
+            echo '::error::Release Please must have created a draft release before publication.'
+            exit 1
+          }
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build, notarize, sign, and attest macOS applications
+    needs: preflight
+    runs-on: macos-14
+    environment: release
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+      APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+      APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      MAGENTART_DEVELOPER_ID: "Developer ID Application: Fabian Schmieder (${{ vars.APPLE_TEAM_ID }})"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          submodules: recursive
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: examples/pnpm-lock.yaml
+
+      - name: Install build requirements
+        run: |
+          set -euo pipefail
+          brew install cmake
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v3.1.3
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.52.0
+
+      - name: Configure release build
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCODESIGN_IDENTITY="$MAGENTART_DEVELOPER_ID"
+
+      - name: Build and notarize distributable apps and plug-ins
+        run: |
+          set -euo pipefail
+          for target in \
+            notarize_mrt2_standalone \
+            notarize_mrt2_au \
+            notarize_mrt2_jam \
+            notarize_mrt2_collider \
+            notarize_mrt2_max \
+            notarize_mrt2_pd \
+            notarize_mrt2_sc; do
+            bash examples/scripts/with-signing-keychain.sh \
+              cmake --build build --target "$target" --parallel "$(sysctl -n hw.ncpu)"
+          done
+
+      - name: Verify the notarized applications and archives
+        run: |
+          set -euo pipefail
+          apps=(
+            "$HOME/Applications/MRT2.app"
+            "$HOME/Applications/MRT2 (AU).app"
+            "$HOME/Applications/MRT2 - Jam.app"
+            "$HOME/Applications/MRT2 - Collider.app"
+          )
+          payloads=(
+            build/MRT2_Standalone.zip
+            build/MRT2_AU.zip
+            build/MRT2_Jam.zip
+            build/MRT2_Collider.zip
+            build/MRT2_Max.zip
+            build/MRT2_Pd.zip
+            build/MRT2_SuperCollider.zip
+          )
+          for app in "${apps[@]}"; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --context context:primary-signature "$app"
+          done
+          for payload in "${payloads[@]}"; do
+            unzip -t "$payload" >/dev/null
+          done
+          extracted="$(mktemp -d)"
+          trap 'command rm -rf -- "$extracted"' EXIT
+          unzip -q build/MRT2_Max.zip -d "$extracted/max"
+          unzip -q build/MRT2_Pd.zip -d "$extracted/pd"
+          unzip -q build/MRT2_SuperCollider.zip -d "$extracted/sc"
+          codesign --verify --deep --strict --verbose=2 "$extracted/max/mrt2~.mxo"
+          codesign --verify --strict --verbose=2 "$extracted/pd/mrt2~/mrt2~.pd_darwin"
+          codesign --verify --strict --verbose=2 "$extracted/sc/MRT2/MRT2.scx"
+
+      - name: Smoke-start each notarized application
+        run: |
+          set -euo pipefail
+          for app in \
+            "$HOME/Applications/MRT2.app" \
+            "$HOME/Applications/MRT2 (AU).app" \
+            "$HOME/Applications/MRT2 - Jam.app" \
+            "$HOME/Applications/MRT2 - Collider.app"; do
+            executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+            "$app/Contents/MacOS/$executable" >"$RUNNER_TEMP/${executable}.log" 2>&1 &
+            pid=$!
+            sleep 5
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/${executable}.log" >&2
+              echo "::error::$app exited during the clean-room smoke start."
+              exit 1
+            fi
+            kill -TERM "$pid"
+            set +e
+            wait "$pid"
+            exit_status=$?
+            set -e
+            [[ "$exit_status" -eq 0 || "$exit_status" -eq 143 ]] || exit "$exit_status"
+          done
+
+      - name: Generate SPDX SBOMs for the release payloads
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          set -euo pipefail
+          temporary_root="$(mktemp -d)"
+          trap 'command rm -rf -- "$temporary_root"' EXIT
+          for payload in \
+            build/MRT2_Standalone.zip \
+            build/MRT2_AU.zip \
+            build/MRT2_Jam.zip \
+            build/MRT2_Collider.zip \
+            build/MRT2_Max.zip \
+            build/MRT2_Pd.zip \
+            build/MRT2_SuperCollider.zip; do
+            name="$(basename "$payload" .zip)"
+            destination="$temporary_root/$name"
+            mkdir -p "$destination"
+            unzip -q "$payload" -d "$destination"
+            "$SYFT" "dir:$destination" -o spdx-json > "$payload.spdx.json"
+          done
+
+      - name: Sign each release payload with GitHub OIDC
+        run: |
+          set -euo pipefail
+          for payload in \
+            build/MRT2_Standalone.zip \
+            build/MRT2_AU.zip \
+            build/MRT2_Jam.zip \
+            build/MRT2_Collider.zip \
+            build/MRT2_Max.zip \
+            build/MRT2_Pd.zip \
+            build/MRT2_SuperCollider.zip; do
+            cosign sign-blob --yes --bundle "$payload.sigstore.json" "$payload"
+          done
+
+      - name: Attest release payload provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            build/MRT2_Standalone.zip
+            build/MRT2_AU.zip
+            build/MRT2_Jam.zip
+            build/MRT2_Collider.zip
+            build/MRT2_Max.zip
+            build/MRT2_Pd.zip
+            build/MRT2_SuperCollider.zip
+
+      - name: Create the complete release inventory
+        run: |
+          set -euo pipefail
+          assets=(
+            build/MRT2_Standalone.zip build/MRT2_Standalone.zip.spdx.json build/MRT2_Standalone.zip.sigstore.json
+            build/MRT2_AU.zip build/MRT2_AU.zip.spdx.json build/MRT2_AU.zip.sigstore.json
+            build/MRT2_Jam.zip build/MRT2_Jam.zip.spdx.json build/MRT2_Jam.zip.sigstore.json
+            build/MRT2_Collider.zip build/MRT2_Collider.zip.spdx.json build/MRT2_Collider.zip.sigstore.json
+            build/MRT2_Max.zip build/MRT2_Max.zip.spdx.json build/MRT2_Max.zip.sigstore.json
+            build/MRT2_Pd.zip build/MRT2_Pd.zip.spdx.json build/MRT2_Pd.zip.sigstore.json
+            build/MRT2_SuperCollider.zip build/MRT2_SuperCollider.zip.spdx.json build/MRT2_SuperCollider.zip.sigstore.json
+          )
+          for asset in "${assets[@]}"; do
+            [[ -s "$asset" ]] || { echo "::error::Missing release asset: $asset"; exit 1; }
+          done
+          shasum -a 256 "${assets[@]}" > build/SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ needs.preflight.outputs.tag }}
+          path: |
+            build/MRT2_Standalone.zip
+            build/MRT2_Standalone.zip.spdx.json
+            build/MRT2_Standalone.zip.sigstore.json
+            build/MRT2_AU.zip
+            build/MRT2_AU.zip.spdx.json
+            build/MRT2_AU.zip.sigstore.json
+            build/MRT2_Jam.zip
+            build/MRT2_Jam.zip.spdx.json
+            build/MRT2_Jam.zip.sigstore.json
+            build/MRT2_Collider.zip
+            build/MRT2_Collider.zip.spdx.json
+            build/MRT2_Collider.zip.sigstore.json
+            build/MRT2_Max.zip
+            build/MRT2_Max.zip.spdx.json
+            build/MRT2_Max.zip.sigstore.json
+            build/MRT2_Pd.zip
+            build/MRT2_Pd.zip.spdx.json
+            build/MRT2_Pd.zip.sigstore.json
+            build/MRT2_SuperCollider.zip
+            build/MRT2_SuperCollider.zip.spdx.json
+            build/MRT2_SuperCollider.zip.sigstore.json
+            build/SHA256SUMS
+          if-no-files-found: error
+
+  stage:
+    name: Verify and stage the draft release
+    needs: [preflight, build]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-${{ needs.preflight.outputs.tag }}
+          path: candidate
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v3.1.3
+
+      - name: Upload the verified inventory to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" candidate/* --clobber
+
+      - name: Verify downloaded release bytes, signatures, and counter-probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          downloaded="$(mktemp -d)"
+          trap 'command rm -rf -- "$downloaded"' EXIT
+          gh release download "$TAG" --dir "$downloaded" --pattern '*'
+          cmp candidate/SHA256SUMS "$downloaded/SHA256SUMS"
+          (cd "$downloaded" && shasum -a 256 -c SHA256SUMS)
+          for payload in \
+            MRT2_Standalone.zip \
+            MRT2_AU.zip \
+            MRT2_Jam.zip \
+            MRT2_Collider.zip \
+            MRT2_Max.zip \
+            MRT2_Pd.zip \
+            MRT2_SuperCollider.zip; do
+            cmp "candidate/$payload" "$downloaded/$payload"
+            cosign verify-blob \
+              --bundle "$downloaded/$payload.sigstore.json" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$TAG$" \
+              "$downloaded/$payload" >/dev/null
+          done
+          cp "$downloaded/MRT2_Standalone.zip" "$downloaded/corrupt-MRT2_Standalone.zip"
+          printf x >> "$downloaded/corrupt-MRT2_Standalone.zip"
+          if cosign verify-blob \
+            --bundle "$downloaded/MRT2_Standalone.zip.sigstore.json" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$TAG$" \
+            "$downloaded/corrupt-MRT2_Standalone.zip" >/dev/null 2>&1; then
+            echo '::error::The signature counter-probe unexpectedly verified.'
+            exit 1
+          fi
+
+      - name: Publish the staged prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
+          gh release view "$TAG" --json isDraft,isPrerelease,isLatest \
+            --jq 'select(.isDraft == false and .isPrerelease == true and .isLatest == false)' >/dev/null
+
+  promote:
+    name: Promote the verified release
+    needs: [preflight, stage]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.preflight.outputs.tag }}
+    steps:
+      - name: Promote only the verified prerelease to latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json isDraft,isPrerelease \
+            --jq 'select(.isDraft == false and .isPrerelease == true)' >/dev/null
+          gh release edit "$TAG" --prerelease=false --latest
+          gh release view "$TAG" --json isDraft,isPrerelease,isLatest \
+            --jq 'select(.isDraft == false and .isPrerelease == false and .isLatest == true)' >/dev/null

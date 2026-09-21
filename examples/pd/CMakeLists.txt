@@ -119,3 +119,15 @@ add_custom_target(deploy_mrt2_pd
     COMMENT "Deploying mrt2~ to ${PD_LIBRARY_DIR}/mrt2~"
     VERBATIM
 )
+
+magentart_add_notarize_payload_target(notarize_mrt2_pd
+    SOURCE "$<TARGET_FILE:mrt2_pd>"
+    SOURCE_NAME "mrt2~.pd_darwin"
+    DEPENDS mrt2_pd
+    ZIP_NAME "MRT2_Pd.zip"
+    PAYLOAD_DIRECTORY "mrt2~"
+    EXTRA_FILES
+        "$<TARGET_FILE_DIR:mrt2_pd>/mlx.metallib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/mrt2~-help.pd"
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+)

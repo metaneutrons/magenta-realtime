@@ -47,4 +47,4 @@ The inference engine runs in real-time and expects specific audio configuration 
 ## 3. Reporting Issues
 
 If you encounter bugs, performance issues, or crash logs, please report them at:
-👉 https://github.com/magenta/magenta-realtime/issues
+👉 https://github.com/metaneutrons/magenta-realtime/issues

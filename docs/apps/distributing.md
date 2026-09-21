@@ -78,10 +78,13 @@ uv run cmake --build build --target notarize_mrt2_au          # AUv3 Plugin
 uv run cmake --build build --target notarize_mrt2_standalone  # Standalone App
 uv run cmake --build build --target notarize_mrt2_jam         # Jam App
 uv run cmake --build build --target notarize_mrt2_collider    # Collider App
+uv run cmake --build build --target notarize_mrt2_max         # Max external
+uv run cmake --build build --target notarize_mrt2_pd          # Pure Data external
+uv run cmake --build build --target notarize_mrt2_sc          # SuperCollider UGen
 ```
 
-If the signing identity is supplied as `MACOS_CERT_P12` (base64 PKCS#12) and
-`MACOS_CERT_PASSWORD`, run an individual CMake target through the temporary
+If the signing identity is supplied as `APPLE_CERT_P12_BASE64` (base64 PKCS#12)
+and `APPLE_CERT_PASSWORD`, run an individual CMake target through the temporary
 keychain wrapper instead:
 
 ```bash
@@ -91,24 +94,32 @@ bash examples/scripts/with-signing-keychain.sh \
 
 *(Note: If you want to pin a specific identity to a single build folder without exporting an environment variable, pass `-DCODESIGN_IDENTITY="..."` to CMake instead.)*
 
-Each `notarize_*` target automatically runs its corresponding `deploy_*` target to compile, sign (with hardened runtime + secure timestamp), submit the archive, and staple the approved ticket. The distributable zip will be generated in `build/` (e.g., `build/MRT2_AU.zip`).
+The application targets run their corresponding `deploy_*` target before
+notarization. The Max, Pure Data, and SuperCollider targets instead package
+their signed build outputs directly and never install files into host-specific
+user directories. Every distributable ZIP is generated in `build/` (for
+example, `build/MRT2_AU.zip`).
 
 ### Automated GitHub Releases
 
-Release Please creates a release pull request from Conventional Commits on
-`main`. Merging that pull request creates the GitHub release and starts the
-macOS release job in the same workflow. It builds, signs, notarizes, staples,
-and uploads the Standalone, AUv3, Jam, and Collider ZIP archives. The Python
-package is published through the existing PyPI trusted-publishing workflow.
+Release Please creates a draft release pull request from Conventional Commits on
+`main`. Merging that pull request creates an immutable tag and a draft GitHub
+Release. The protected release workflow validates the tag and credentials,
+builds, signs, notarizes, staples, creates SPDX SBOMs and Sigstore bundles,
+attests each payload, and verifies downloaded release bytes before publishing
+the Standalone, AUv3, Jam, Collider, Max, Pure Data, and SuperCollider ZIP
+archives.
 
-Configure these repository Actions secrets before merging the first release
-pull request. Their values correspond to the local variables described above:
+The project does not publish to PyPI. All distributable artifacts are GitHub
+Release assets of `metaneutrons/magenta-realtime`.
 
-- `MACOS_CERT_P12`
-- `MACOS_CERT_PASSWORD`
-- `APPLE_API_KEY`
-- `APPLE_API_ISSUER`
-- `APPLE_API_KEY_CONTENT`
+Store these secrets only in the protected `release` environment:
 
-The release workflow uses the repository-scoped `GITHUB_TOKEN`; it does not
-require a personal access token.
+- `APPLE_CERT_P12_BASE64`
+- `APPLE_CERT_PASSWORD`
+- `APPLE_API_KEY_CONTENT` (base64-encoded `.p8` key)
+
+Store `APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_TEAM_ID` as `release`
+environment variables. Release Please uses a separate repository-scoped GitHub
+App credential in the protected `release-please` environment; it is never a
+personal access token.

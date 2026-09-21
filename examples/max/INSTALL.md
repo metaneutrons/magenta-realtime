@@ -10,9 +10,11 @@ Do one of the following:
 * Download manually with the installer from the GitHub repo.
 
 ```sh
-pip install "magenta-rt[mlx]"
-mrt models init
-mrt models download
+git clone --recurse-submodules https://github.com/metaneutrons/magenta-realtime.git
+cd magenta-realtime
+uv sync --extra mlx
+uv run mrt models init
+uv run mrt models download
 ```
 
 

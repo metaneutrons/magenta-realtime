@@ -1,14 +1,11 @@
-name: Release Please and notarized macOS release
+name: Release Please
 
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write
-  id-token: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -16,85 +13,53 @@ concurrency:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    name: Create a draft release pull request
+    runs-on: ubuntu-24.04
+    environment: release-please
+    permissions:
+      contents: read
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - id: release
-        uses: googleapis/release-please-action@v4
+      - name: Mint the repository-scoped Release Please token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
+          client-id: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: write
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Verify the token has exactly the intended repository reach
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          repos="$(gh api --paginate /installation/repositories --jq '.repositories[].full_name' | sort -u)"
+          [[ "$repos" == "$GITHUB_REPOSITORY" ]] || {
+            echo '::error::Release Please App installation must be restricted to this repository.'
+            exit 1
+          }
+          gh api "repos/$GITHUB_REPOSITORY" --jq '.full_name' | grep -Fx "$GITHUB_REPOSITORY"
+
+      - name: Create or update the release pull request
+        id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  notarize-macos:
-    name: Build, notarize, and upload macOS applications
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    runs-on: macos-14
-    env:
-      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-      MAGENTART_DEVELOPER_ID: "Developer ID Application: Fabian Schmieder (898G35U5LW)"
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
-          submodules: recursive
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Install build requirements
-        run: |
-          brew install cmake
-          xcodebuild -downloadComponent MetalToolchain
-
-      - name: Configure release build
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCODESIGN_IDENTITY="$MAGENTART_DEVELOPER_ID"
-
-      - name: Build and notarize distributable applications
+      - name: Dispatch the notarized release pipeline
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
         run: |
           set -euo pipefail
-          for target in notarize_mrt2_standalone notarize_mrt2_au notarize_mrt2_jam notarize_mrt2_collider; do
-            bash examples/scripts/with-signing-keychain.sh \
-              cmake --build build --target "$target" --parallel "$(sysctl -n hw.ncpu)"
-          done
-
-      - name: Upload notarized release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          gh release upload "$TAG" \
-            build/MRT2_Standalone.zip \
-            build/MRT2_AU.zip \
-            build/MRT2_Jam.zip \
-            build/MRT2_Collider.zip \
-            --clobber
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: notarized-macos-${{ needs.release-please.outputs.tag_name }}
-          path: |
-            build/MRT2_Standalone.zip
-            build/MRT2_AU.zip
-            build/MRT2_Jam.zip
-            build/MRT2_Collider.zip
-          if-no-files-found: error
-
-  publish-pypi:
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    uses: ./.github/workflows/pypi_publish.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
+          gh workflow run release.yml --ref "$TAG" -f tag="$TAG"

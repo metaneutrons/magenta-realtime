@@ -1,11 +1,13 @@
 # Installation
 
-Magenta RealTime 2 ships as a single PyPI package, `magenta-rt`, which gives you
-both the `mrt` command-line tool and the `magenta_rt` Python library. Which
-backend you install depends on what you want to do:
+Magenta RealTime 2 distributes its macOS Apps and AUv3 plugin exclusively as
+notarized [GitHub Release assets](https://github.com/metaneutrons/magenta-realtime/releases).
+The Python command-line tool and library are available from a source checkout;
+they are not published to PyPI. Which local backend you install depends on what
+you want to do:
 
 - **Real-time streaming** (DAW plugins, live performance) runs on **Apple
-  Silicon** via the **MLX** backend. Install `magenta-rt[mlx]`.
+  Silicon** via the **MLX** backend. Install the local `mlx` extra.
 - **Offline / batch generation and research** runs anywhere via the **JAX**
   backend, which is always included. The base install ships JAX on CPU; on Linux
   you add a hardware-accelerated JAX wheel (CUDA or TPU).
@@ -16,36 +18,38 @@ backend you install depends on what you want to do:
 For which Macs can stream each model size in real-time, see the
 [hardware requirements table](models.md#hardware-requirements).
 
-## 1. Create a virtual environment
+## 1. Clone the source and create a virtual environment
 
 We use [uv](https://docs.astral.sh/uv/) to manage the Python environment.
 
 ```bash
-# Install uv if you haven't already
+# Clone the repository and install uv if necessary
+git clone --recurse-submodules https://github.com/metaneutrons/magenta-realtime.git
+cd magenta-realtime
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create and activate a Python 3.12 virtual environment
-uv venv --python 3.12
-source .venv/bin/activate
+# Create the locked Python 3.12 environment
+uv sync
 ```
 
-## 2. Install `magenta-rt`
+## 2. Install a local backend
 
 ::::{tab-set}
 
 :::{tab-item} macOS (Apple Silicon)
 ```bash
-uv pip install "magenta-rt[mlx]"
+uv sync --extra mlx
 ```
 :::
 
 :::{tab-item} Linux (NVIDIA / TPU)
 Pick the [JAX wheel](https://docs.jax.dev/en/latest/installation.html) that
-matches your hardware (e.g. `jax[cuda13]` or `jax[tpu]`) and install it alongside
-`magenta-rt`:
+matches your hardware (e.g. `jax[cuda13]` or `jax[tpu]`) and install it in the
+local environment:
 
 ```bash
-uv pip install "magenta-rt" "jax[cuda13]"
+uv sync --extra dev
+uv pip install "jax[cuda13]"
 ```
 :::
 
@@ -91,15 +95,15 @@ See [Inference](inference.md) for more on prompting, tokens, and bulk generation
 
 ## Local development
 
-To work on the library itself, clone the repo and install in editable mode
-instead of from PyPI:
+The source checkout is the supported Python distribution route:
 
 ```bash
-git clone --recurse-submodules https://github.com/magenta/magenta-realtime.git
+git clone --recurse-submodules https://github.com/metaneutrons/magenta-realtime.git
 cd magenta-realtime
 
-uv pip install -e ".[mlx]"           # macOS
-uv pip install -e "." "jax[cuda13]"  # Linux with CUDA
+uv sync --extra mlx --extra dev        # macOS
+uv sync --extra dev                    # Linux with CUDA
+uv pip install "jax[cuda13]"
 ```
 
 ## C++ app development

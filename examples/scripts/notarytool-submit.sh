@@ -5,7 +5,7 @@
 # selected at runtime so CMake targets work in CI and non-interactive shells:
 #
 #   1. App Store Connect API key supplied through APPLE_API_KEY,
-#      APPLE_API_ISSUER, and APPLE_API_KEY_CONTENT; or
+#      APPLE_API_ISSUER, and base64-encoded APPLE_API_KEY_CONTENT; or
 #   2. a preconfigured notarytool keychain profile.
 
 set -euo pipefail
@@ -33,7 +33,14 @@ if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_K
     }
     trap cleanup_notary_key EXIT HUP INT TERM
     chmod 600 "$NOTARY_KEY_PATH"
-    printf '%s' "$APPLE_API_KEY_CONTENT" > "$NOTARY_KEY_PATH"
+    if [[ "$APPLE_API_KEY_CONTENT" == *'-----BEGIN '*'PRIVATE KEY-----'* ]]; then
+        # Local developer configuration may retain the original PEM. CI always
+        # uses the base64 form validated by the release preflight.
+        printf '%s' "$APPLE_API_KEY_CONTENT" > "$NOTARY_KEY_PATH"
+    else
+        printf '%s' "$APPLE_API_KEY_CONTENT" | base64 -D > "$NOTARY_KEY_PATH"
+    fi
+    openssl pkey -in "$NOTARY_KEY_PATH" -noout >/dev/null
 
     echo "Submitting with the App Store Connect API key."
     xcrun notarytool submit "$ARCHIVE_PATH" \
