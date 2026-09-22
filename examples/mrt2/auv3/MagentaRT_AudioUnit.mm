@@ -541,7 +541,10 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
             NSLog(@"MagentaRT_AU: unknown factory preset number %ld.", (long)preset.number);
             return;
         }
-        _currentPreset = [preset copy];
+        AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
+        current.number = preset.number;
+        current.name = preset.name;
+        _currentPreset = current;
         return;
     }
 
@@ -553,7 +556,10 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     }
     [self setFullState:state];
     self.activePresetIdentifier = nil;
-    _currentPreset = [preset copy];
+    AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
+    current.number = preset.number;
+    current.name = preset.name;
+    _currentPreset = current;
 }
 
 - (AUAudioUnitPreset*)currentPreset {
