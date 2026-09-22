@@ -29,6 +29,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -145,6 +146,7 @@ struct MLXEngine::Impl {
   void fetch_musiccoca_tokens(const std::vector<std::string> &texts,
                               const std::vector<float> &weights);
   void start_inference_thread_if_needed();
+  void stop_musiccoca_worker();
 
   int calculate_token(NoteState state, int onset_mode);
   void populate_condition_tokens(int32_t *cond_ptr);
@@ -199,6 +201,8 @@ struct MLXEngine::Impl {
 
   // --- MusicCoCa async token state ---
   mutable std::mutex musiccoca_mutex_;
+  std::condition_variable musiccoca_idle_cv_;
+  std::atomic<bool> musiccoca_accepting_tasks_{true};
   std::atomic<bool> is_musiccoca_fetching_{false};
   std::atomic<int> text_encoder_status_{
       0}; // 0=idle 1=fetching 2=success 3=error
@@ -261,6 +265,9 @@ MLXEngine::Impl::~Impl() { unload(); }
 
 bool MLXEngine::Impl::init_assets(const char *resource_dir,
                                   const char *model_subfolder) {
+  // A reinitialization may replace the TFLite interpreters.  Finish the
+  // detached MusicCoCa worker first so it cannot access retired tensors.
+  stop_musiccoca_worker();
   try {
     std::string dir(resource_dir);
     std::string sub(model_subfolder);
@@ -448,6 +455,8 @@ bool MLXEngine::Impl::init_assets(const char *resource_dir,
 
     musiccoca_tokens_.assign(std::begin(kDefaultMusicCoCaTokensPiano),
                              std::end(kDefaultMusicCoCaTokensPiano));
+
+    musiccoca_accepting_tasks_.store(true, std::memory_order_release);
 
     return true;
   } catch (const std::exception &e) {
@@ -1239,6 +1248,10 @@ bool MLXEngine::Impl::prefill_with_token_array(
 }
 
 void MLXEngine::Impl::unload() {
+  // The prompt worker owns TFLite tensor pointers while it encodes.  It must
+  // finish before any interpreter, model, or tokenizer is destroyed.
+  stop_musiccoca_worker();
+
   if (text_encoder_interpreter_)
     TfLiteInterpreterDelete(text_encoder_interpreter_);
   if (text_encoder_options_)
@@ -1317,8 +1330,6 @@ void MLXEngine::Impl::reset_state() {
       add_log(err);
     }
   }
-  is_musiccoca_fetching_ = false;
-
   // Check if we have active prompts still loaded
   bool has_active_prompts = false;
   for (int i = 0; i < (int)kMaxPrompts; ++i) {
@@ -1659,11 +1670,14 @@ void MLXEngine::Impl::set_musiccoca_tokens_masked() {
 
 void MLXEngine::Impl::set_text_prompts(const std::vector<std::string> &texts,
                                        const std::vector<float> &weights) {
-  if (texts.empty())
+  if (texts.empty() ||
+      !musiccoca_accepting_tasks_.load(std::memory_order_acquire))
     return;
 
   {
     std::lock_guard<std::mutex> lock(musiccoca_mutex_);
+    if (!musiccoca_accepting_tasks_.load(std::memory_order_relaxed))
+      return;
     has_pending_musiccoca_ = true;
     pending_texts_ = texts;
     pending_weights_ = weights;
@@ -1674,9 +1688,19 @@ void MLXEngine::Impl::set_text_prompts(const std::vector<std::string> &texts,
 
 void MLXEngine::Impl::start_inference_thread_if_needed() {
   add_log("[MagentaRT] start_inference_thread_if_needed called.");
-  if (is_musiccoca_fetching_.exchange(true)) {
-    add_log("[MagentaRT] Thread already running, returning.");
-    return;
+  {
+    // Coordinate the accepting check and fetching flag with shutdown.  Without
+    // this lock, unload() could observe no worker, free the TFLite objects,
+    // and then a caller could spawn a detached worker against those objects.
+    std::lock_guard<std::mutex> lock(musiccoca_mutex_);
+    if (!musiccoca_accepting_tasks_.load(std::memory_order_relaxed)) {
+      add_log("[MagentaRT] Ignoring MusicCoCa work while shutting down.");
+      return;
+    }
+    if (is_musiccoca_fetching_.exchange(true)) {
+      add_log("[MagentaRT] Thread already running, returning.");
+      return;
+    }
   }
 
   add_log("[MagentaRT] Starting new inference thread.");
@@ -1688,22 +1712,27 @@ void MLXEngine::Impl::start_inference_thread_if_needed() {
       std::atomic<bool> &flag;
       Impl *impl;
       ~Guard() {
-        flag.store(false);
         if (impl->text_encoder_status_ == 1)
           impl->text_encoder_status_ = 3;
         if (impl->quantizer_status_ == 1)
           impl->quantizer_status_ = 3;
+        flag.store(false, std::memory_order_release);
+        impl->musiccoca_idle_cv_.notify_all();
       }
     } guard{is_musiccoca_fetching_, this};
 
     try {
       while (true) {
+        if (!musiccoca_accepting_tasks_.load(std::memory_order_acquire)) {
+          break;
+        }
         std::vector<std::string> texts_copy;
         std::vector<float> weights_copy;
 
         {
           std::lock_guard<std::mutex> lock(musiccoca_mutex_);
-          if (!has_pending_musiccoca_) {
+          if (!musiccoca_accepting_tasks_.load(std::memory_order_relaxed) ||
+              !has_pending_musiccoca_) {
             break;
           }
           texts_copy = pending_texts_;
@@ -1725,6 +1754,18 @@ void MLXEngine::Impl::start_inference_thread_if_needed() {
       quantizer_status_ = 3;
     }
   }).detach();
+}
+
+void MLXEngine::Impl::stop_musiccoca_worker() {
+  musiccoca_accepting_tasks_.store(false, std::memory_order_release);
+
+  std::unique_lock<std::mutex> lock(musiccoca_mutex_);
+  has_pending_musiccoca_ = false;
+  pending_texts_.clear();
+  pending_weights_.clear();
+  musiccoca_idle_cv_.wait(lock, [this] {
+    return !is_musiccoca_fetching_.load(std::memory_order_acquire);
+  });
 }
 
 void MLXEngine::Impl::set_audio_embedding(int index, const float *embedding) {
@@ -1749,12 +1790,15 @@ void MLXEngine::Impl::set_audio_prompt_samples(int index,
                                                const std::string &filename,
                                                const float *samples,
                                                size_t count) {
-  if (index < 0 || index >= (int)kMaxPrompts)
+  if (index < 0 || index >= (int)kMaxPrompts ||
+      !musiccoca_accepting_tasks_.load(std::memory_order_acquire))
     return;
 
   bool should_trigger = false;
   {
     std::lock_guard<std::mutex> lock(musiccoca_mutex_);
+    if (!musiccoca_accepting_tasks_.load(std::memory_order_relaxed))
+      return;
     if (samples && count > 0) {
       pending_audio_samples_[index].assign(samples, samples + count);
       slot_is_audio_[index] = true;
