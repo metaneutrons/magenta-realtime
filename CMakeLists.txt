@@ -14,6 +14,11 @@
 
 cmake_minimum_required(VERSION 3.27)
 
+# TensorFlow Lite's pinned CMake project still declares a 3.5 compatibility
+# floor.  CMake 4 requires this explicit policy floor for such dependencies.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
+    "Oldest CMake policy level accepted by third-party dependencies")
+
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum OS X deployment version" FORCE)
 
 project(MagentaRT LANGUAGES C CXX OBJCXX)
@@ -63,7 +68,10 @@ include(FetchContent)
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/ml-explore/mlx.git
-    GIT_TAG        1f8e74e3f12f31365464a6867c6579f0e9b29d85 # v0.32.2
+    # MRT2's exported .mlxfn artifacts use the MLX 0.31.1 wire format.
+    # Keep this immutable revision in sync with the model exporter: later MLX
+    # releases reject these artifacts during import.
+    GIT_TAG        ce45c52505c8158ea48d2a54e8caae05efd86bfe # v0.31.1
     GIT_SHALLOW    ON
 )
 set(MLX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
