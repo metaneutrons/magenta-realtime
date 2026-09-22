@@ -14,9 +14,16 @@
 
 cmake_minimum_required(VERSION 3.27)
 
+# TensorFlow Lite's pinned CMake project still declares a 3.5 compatibility
+# floor.  CMake 4 requires this explicit policy floor for such dependencies.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
+    "Oldest CMake policy level accepted by third-party dependencies")
+
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum OS X deployment version" FORCE)
 
 project(MagentaRT LANGUAGES C CXX OBJCXX)
+
+include(CTest)
 
 # macOS-only today: the inference stack depends on MLX (Metal), the
 # hosts use AppKit/AudioToolbox/CoreMIDI/WebKit, and we link `-framework
@@ -38,7 +45,7 @@ set(CMAKE_OBJCXX_STANDARD 20)
 set(ABSL_INTERNAL_AT_LEAST_CXX20 ON CACHE BOOL "Force Abseil C++20 support")
 set(ABSL_PROPAGATE_CXX_STD ON)
 
-set(MAGENTART_VERSION "0.0.1")
+set(MAGENTART_VERSION "2.0.4") # x-release-please-version
 add_definitions(-DMAGENTART_VERSION="${MAGENTART_VERSION}")
 
 # Fetch Git SHA
@@ -61,7 +68,10 @@ include(FetchContent)
 FetchContent_Declare(
     mlx
     GIT_REPOSITORY https://github.com/ml-explore/mlx.git
-    GIT_TAG        v0.31.1
+    # MRT2's exported .mlxfn artifacts use the MLX 0.31.1 wire format.
+    # Keep this immutable revision in sync with the model exporter: later MLX
+    # releases reject these artifacts during import.
+    GIT_TAG        ce45c52505c8158ea48d2a54e8caae05efd86bfe # v0.31.1
     GIT_SHALLOW    ON
 )
 set(MLX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -159,9 +169,9 @@ endif()
 #
 # Zips the deployed bundle, submits it to Apple's notary service, and
 # staples the ticket. Requires CODESIGN_IDENTITY to be a real Developer ID
-# (not ad-hoc "-") so that the bundle is signed for hardened runtime, and a
-# keychain profile named ${NOTARYTOOL_KEYCHAIN_PROFILE} (see
-# `xcrun notarytool store-credentials`).
+# (not ad-hoc "-") so that the bundle is signed for hardened runtime. The
+# submission helper accepts either App Store Connect API credentials or a
+# notarytool keychain profile.
 function(magentart_add_notarize_target target_name)
     cmake_parse_arguments(N "" "APP;DEPENDS;ZIP_NAME" "EXTRA_FILES" ${ARGN})
     if(NOT N_APP OR NOT N_DEPENDS)
@@ -198,8 +208,8 @@ function(magentart_add_notarize_target target_name)
         DEPENDS ${N_DEPENDS}
         ${prep_commands}
         COMMAND ditto -c -k "${staging_dir}" "${zip_path}"
-        COMMAND xcrun notarytool submit "${zip_path}"
-            --keychain-profile "${NOTARYTOOL_KEYCHAIN_PROFILE}" --wait
+        COMMAND bash "${CMAKE_SOURCE_DIR}/examples/scripts/notarytool-submit.sh"
+            "${zip_path}" "${NOTARYTOOL_KEYCHAIN_PROFILE}"
         COMMAND xcrun stapler staple "${N_APP}"
         COMMAND xcrun stapler validate "${N_APP}"
         # Re-zip the stapled bundle for distribution.
@@ -207,6 +217,74 @@ function(magentart_add_notarize_target target_name)
         COMMAND ditto -c -k "${staging_dir}" "${zip_path}"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${staging_dir}"
         COMMENT "Notarizing ${N_APP} -> ${zip_path}"
+        USES_TERMINAL
+        VERBATIM
+    )
+endfunction()
+
+# magentart_add_notarize_payload_target(<target_name>
+#     SOURCE <file-or-bundle> SOURCE_NAME <name-in-archive>
+#     DEPENDS <build-target> ZIP_NAME <name>.zip
+#     [PAYLOAD_DIRECTORY <directory-in-archive>]
+#     [STAPLE_PATH <bundle-to-staple>]
+#     [EXTRA_FILES <files-to-package>...])
+#
+# Produces a notarized distributable for plug-in formats that are not .app
+# bundles. SOURCE and EXTRA_FILES may use target generator expressions. A
+# STAPLE_PATH is supplied only for bundle formats that support stapling; the
+# signed Pd and SuperCollider modules rely on the notarized archive ticket.
+function(magentart_add_notarize_payload_target target_name)
+    cmake_parse_arguments(N "" "SOURCE;SOURCE_NAME;DEPENDS;ZIP_NAME;PAYLOAD_DIRECTORY;STAPLE_PATH"
+        "EXTRA_FILES" ${ARGN})
+    if(NOT N_SOURCE OR NOT N_SOURCE_NAME OR NOT N_DEPENDS OR NOT N_ZIP_NAME)
+        message(FATAL_ERROR
+            "magentart_add_notarize_payload_target: SOURCE, SOURCE_NAME, DEPENDS, and ZIP_NAME are required")
+    endif()
+
+    if(CODESIGN_IDENTITY STREQUAL "-")
+        add_custom_target(${target_name}
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "ERROR: ${target_name} requires a Developer ID. Reconfigure with -DCODESIGN_IDENTITY=\"Developer ID Application: Your Name (TEAMID)\""
+            COMMAND ${CMAKE_COMMAND} -E false
+            COMMENT "${target_name} disabled (CODESIGN_IDENTITY is ad-hoc)"
+        )
+        return()
+    endif()
+
+    set(zip_path "${CMAKE_BINARY_DIR}/${N_ZIP_NAME}")
+    set(staging_dir "${CMAKE_BINARY_DIR}/staging_${target_name}")
+    if(N_PAYLOAD_DIRECTORY)
+        set(payload_dir "${staging_dir}/${N_PAYLOAD_DIRECTORY}")
+    else()
+        set(payload_dir "${staging_dir}")
+    endif()
+
+    set(prep_commands)
+    list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E rm -rf "${staging_dir}")
+    list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E make_directory "${payload_dir}")
+    list(APPEND prep_commands COMMAND ditto "${N_SOURCE}" "${payload_dir}/${N_SOURCE_NAME}")
+    foreach(extra_file IN LISTS N_EXTRA_FILES)
+        list(APPEND prep_commands COMMAND ${CMAKE_COMMAND} -E copy "${extra_file}" "${payload_dir}/")
+    endforeach()
+
+    set(staple_commands)
+    if(N_STAPLE_PATH)
+        list(APPEND staple_commands COMMAND xcrun stapler staple "${N_STAPLE_PATH}")
+        list(APPEND staple_commands COMMAND xcrun stapler validate "${N_STAPLE_PATH}")
+        # Repackage only after the ticket is inside the notarizable bundle.
+        list(APPEND staple_commands ${prep_commands})
+        list(APPEND staple_commands COMMAND ditto -c -k "${staging_dir}" "${zip_path}")
+    endif()
+
+    add_custom_target(${target_name}
+        DEPENDS ${N_DEPENDS}
+        ${prep_commands}
+        COMMAND ditto -c -k "${staging_dir}" "${zip_path}"
+        COMMAND bash "${CMAKE_SOURCE_DIR}/examples/scripts/notarytool-submit.sh"
+            "${zip_path}" "${NOTARYTOOL_KEYCHAIN_PROFILE}"
+        ${staple_commands}
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${staging_dir}"
+        COMMENT "Notarizing payload ${N_ZIP_NAME}"
         USES_TERMINAL
         VERBATIM
     )
@@ -221,20 +299,20 @@ else()
     add_compile_definitions(MAGENTART_DEBUG_LOG=0)
 endif()
 
-# Run a unified npm workspaces install on the examples folder
-add_custom_target(npm_install_root
-    COMMAND npm install
+# Run a unified pnpm workspaces install on the examples folder
+add_custom_target(pnpm_install_root
+    COMMAND pnpm install --frozen-lockfile
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
-    COMMENT "Running NPM workspaces install inside examples..."
+    COMMENT "Running pnpm workspaces install inside examples..."
 )
 
 # React UI for the main MRT2 plugin.
 add_custom_target(build_mrt2_ui ALL
-    COMMAND npm run build
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples/mrt2/react_ui
+    COMMAND pnpm --filter magenta-rt-v2-ui run build
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
     COMMENT "Building MRT2 UI..."
 )
-add_dependencies(build_mrt2_ui npm_install_root)
+add_dependencies(build_mrt2_ui pnpm_install_root)
 
 # --- Project targets ----------------------------------------------------------
 add_subdirectory(core)

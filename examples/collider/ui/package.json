@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --config config/vite.config.ts",
-    "build": "tsc -b config/tsconfig.app.json && vite build --config config/vite.config.ts",
+    "dev": "node ./node_modules/vite/bin/vite.js --config config/vite.config.ts",
+    "build": "node ./node_modules/typescript/bin/tsc -b config/tsconfig.app.json && node ./node_modules/vite/bin/vite.js build --config config/vite.config.ts",
+    "typecheck": "node ./node_modules/typescript/bin/tsc -b config/tsconfig.app.json --pretty false",
     "postbuild": "node postbuild.js",
-    "preview": "vite preview --config config/vite.config.ts",
+    "preview": "node ./node_modules/vite/bin/vite.js preview --config config/vite.config.ts",
     "kill": "pkill -f Collider 2>/dev/null || true",
     "open": "open ~/Applications/MRT2\\ -\\ Collider.app",
     "copy": "cp -r dist/* ~/Applications/MRT2\\ -\\ Collider.app/Contents/Resources/collider_ui/",
@@ -17,7 +18,11 @@
     "launch:dev": "npm run kill && npm run open"
   },
   "dependencies": {
-    "@magenta-rt/common": "*",
+    "@emotion/react": "^11.13.5",
+    "@emotion/styled": "^11.13.5",
+    "@magenta-rt/common": "workspace:*",
+    "@mui/icons-material": "^6.1.10",
+    "@mui/material": "^6.1.10",
     "lil-gui": "^0.21.0",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",

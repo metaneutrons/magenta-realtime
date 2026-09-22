@@ -1,21 +1,23 @@
 # Magenta RealTime 2
 
-[![CLI Tests](https://github.com/magenta/magenta-realtime/actions/workflows/cli_tests.yml/badge.svg)](https://github.com/magenta/magenta-realtime/actions/workflows/cli_tests.yml)
+[![CLI Tests](https://github.com/metaneutrons/magenta-realtime/actions/workflows/cli_tests.yml/badge.svg)](https://github.com/metaneutrons/magenta-realtime/actions/workflows/cli_tests.yml)
 
 > [!NOTE]
-> **Go [here](https://magenta.withgoogle.com/mrt2) for pre-built Apps & Plugins.**
+> **Download notarized Apps and Plugins from the [GitHub Releases page](https://github.com/metaneutrons/magenta-realtime/releases).**
+
+> **Fork notice:** This metaneutrons distribution is an independent fork of
+> Magenta RealTime and is not affiliated with or endorsed by Google.
 
 Magenta RealTime 2 (MRT2) is a state-of-the-art open-weights model for real-time music generation. It contains several key components
 * An [open-weights model](https://huggingface.co/google/magenta-realtime-2)
-* A [Python library](README.md) `magenta-rt` for inference with JAX and MLX backends
+* Python source for inference with JAX and MLX backends (not published to PyPI)
 * A [C++ inference engine](core/README.md) `magentart::core` for efficient streaming audio generation on Apple Silicon MacBooks
 * A suite of [example applications](examples/README.md) built on the inference engine.
 
 Use this project to run inference, build a DAW plugin, or embed the model into new applications of your imagination.
 Future updates will support supervised fine-tuning.
 
-📖 **Full documentation:** https://magenta.github.io/magenta-realtime/
-(or build it locally — see [`docs/README.md`](docs/README.md)).
+📖 **Full documentation:** build it locally — see [`docs/README.md`](docs/README.md).
 
 > [!NOTE]
 > **Looking for Magenta RealTime v1?** The original model and code have been moved to the [`v1_legacy`](https://github.com/magenta/magenta-realtime/tree/v1_legacy) branch.
@@ -56,13 +58,11 @@ The table below shows which devices support **real-time streaming** (generating 
 ## Quickstart on Apple Silicon
 
 ```bash
-# Install uv if you haven't and create a venv
+# Clone the source checkout and install uv if necessary
+git clone --recurse-submodules https://github.com/metaneutrons/magenta-realtime.git
+cd magenta-realtime
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv --python 3.12
-source .venv/bin/activate
-
-# Install dependencies (Python dev)
-uv pip install "magenta-rt[mlx]"
+uv sync --extra mlx
 
 # Download resources: style model and codec model
 # (i.e., MusicCoCa and SpectroStream)
@@ -75,12 +75,13 @@ mrt mlx generate --prompt "disco funk" --duration 4.0 --model=mrt2_base
 
 ### Python Development
 
-For local development, clone the repo instead of installing from PyPI:
+The Python runtime is supplied from this source checkout; it is not published to
+PyPI:
 
 ```bash
-git clone --recurse-submodules https://github.com/magenta/magenta-realtime.git
+git clone --recurse-submodules https://github.com/metaneutrons/magenta-realtime.git
 cd magenta-realtime
-uv pip install -e ".[mlx]"
+uv sync --extra mlx --extra dev
 ```
 
 ### C++ App Development

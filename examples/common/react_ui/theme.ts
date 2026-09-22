@@ -1,4 +1,6 @@
 import { createTheme } from '@mui/material/styles';
+import '@mui/material/IconButton';
+import '@mui/material/IconButton/IconButton';
 
 // Declare module augmentation to register the custom "ghost" variant in TypeScript
 declare module '@mui/material/Button' {
@@ -8,6 +10,15 @@ declare module '@mui/material/Button' {
 }
 
 declare module '@mui/material/IconButton' {
+  interface IconButtonOwnProps {
+    variant?: 'ghost' | 'jam';
+  }
+}
+
+// IconButtonOwnProps is declared in the implementation module in MUI's type
+// definitions; augment it there as well so consumers using strict TypeScript
+// project references see the custom variants.
+declare module '@mui/material/IconButton/IconButton' {
   interface IconButtonOwnProps {
     variant?: 'ghost' | 'jam';
   }

@@ -31,7 +31,7 @@ if(NOT TARGET mlx)
     FetchContent_Declare(
         mlx
         GIT_REPOSITORY https://github.com/ml-explore/mlx.git
-        GIT_TAG        v0.31.1
+        GIT_TAG        ce45c52505c8158ea48d2a54e8caae05efd86bfe # v0.31.1
         GIT_SHALLOW    ON
     )
     set(MLX_BUILD_TESTS OFF CACHE BOOL "" FORCE)

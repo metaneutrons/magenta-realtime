@@ -56,6 +56,16 @@ This script builds, signs with Hardened Runtime, and submits all projects to App
        --password <Your-App-Specific-Password>
    ```
 
+   For CI or another non-interactive environment, export `APPLE_API_KEY`,
+   `APPLE_API_ISSUER`, and `APPLE_API_KEY_CONTENT` instead. The scripts use
+   those App Store Connect API credentials directly and do not write them to
+   the repository or a persistent keychain.
+
+   When the Developer ID certificate is supplied as base64 PKCS#12 through
+   `APPLE_CERT_P12_BASE64` and `APPLE_CERT_PASSWORD`, `notarize-all.sh` automatically
+   imports it into a temporary keychain for the duration of the release and
+   removes that keychain afterward.
+
 ### Usage
 
 ```bash
@@ -68,7 +78,7 @@ bash examples/scripts/notarize-all.sh [--keychain-profile <profile-name>]
 
 Upon completion, separate, notarized `.zip` files will be output to your `build/` directory:
 * `MRT2_AU.zip` (AUv3 Plugin Host)
-* `MRT2_Standalone.zip` (Standalone version of AUv3)
+* `MRT2_Standalone.zip` (Standalone App)
 * `MRT2_Jam.zip` (Jam App)
 * `MRT2_Collider.zip` (Collider App)
 * `MRT2_Max.zip` (Max MSP External)

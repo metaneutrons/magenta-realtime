@@ -1,8 +1,8 @@
 #!/bin/bash
 # Copyright 2026 Google LLC
 
-# Build all MRT2 applications, plugins, and externals, sign them,
-# and package them into the 5 ZIP files required for web distribution.
+# Build all MRT2 applications, plug-ins, and externals for local inspection.
+# Official publication is performed only by the GitHub Release workflow.
 #
 # Usage: ./examples/scripts/build-release.sh [output_directory] [--keychain-profile <profile>]
 
@@ -208,6 +208,5 @@ echo "==========================================================================
 echo "✓ All 5 ZIP packages successfully created in: $OUT_DIR"
 ls -la "$OUT_DIR"/*.zip
 echo ""
-echo "Next step: Upload these ZIP files to Google Cloud Storage:"
-echo "  gcloud storage cp \"$OUT_DIR\"/*.zip gs://magenta-rt-public/magenta-rt-2/downloads"
+echo "The official release path uploads separately verified assets to GitHub Releases."
 echo "================================================================================"

@@ -53,16 +53,16 @@ set_target_properties(mrt2_jam PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2_Jam
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2 - Jam"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.jam"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.jam"
 )
 
 # ─── Jam React UI Build Target ─────────────────────────────────────────
 add_custom_target(build_jam_ui ALL
-    COMMAND npm run build
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ui
+    COMMAND pnpm --filter jam-ui run build
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
     COMMENT "Building Jam UI..."
 )
-add_dependencies(build_jam_ui npm_install_root)
+add_dependencies(build_jam_ui pnpm_install_root)
 add_dependencies(mrt2_jam build_jam_ui)
 
 # ─── Deploy standalone app ───────────────────────────────────────────────────

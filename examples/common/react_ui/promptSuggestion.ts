@@ -1,74 +1,23 @@
-export const PROMPT_SUGGESTIONS = [
-  "Dreamy Ambient Pads",
-  "Jazz Piano Trio",
-  "Electro Synthpop",
-  "Chiptune",
-  "Synthwave",
-  "Jazz Guitar",
-  "Saturated Gamelan Choir",
-  "Flamenco Nylon Guitar Rasgueado",
-  "Reggae Rhythm Guitar",
-  "Synthpop Groove Club Mix",
-  "Fast Swing Jazz Clarinet and Guitar",
-  "Afrobeat Band with Horns and Complex Drums",
-  "French House Disco Loops Filter Sweeps",
-  "Country Banjo Picking",
-  "R&B Smooth Keys",
-  "Soft Rock",
-  "Cyberpunk Synthwave Mariachi Horns",
-  "Trap Beat with Sampled Funk",
-  "UK Post-Dubstep String Quartet",
-  "African Kalimba",
-  "Lo-fi Hip Hop Beat",
-  "Smooth Bossa Nova",
-  "West African Kora Polyrhythms",
-  "Danceable Latin Jazz Salsa with Trombone",
-  "Celtic Fiddle Jig",
-  "Acoustic Folk Guitar",
-  "Church Organ",
-  "Surf Rock Guitar",
-  "Cavernous Endless Reverb Electric Guitar Swells",
-  "Japanese Koto",
-  "Gritty Garage Rock",
-  "Indian Classical Sitar and Tabla Raga",
-  "Middle Eastern Oud and Darbuka Groove",
-  "Ambient IDM Glitch Beats",
-  "Euphoric Washed-Out Noise Pop Fuzz",
-  "Andean Pan Flute Mountain Melody",
-  "Balinese Gamelan Metallic Percussion",
-  "Dark Cinematic Soundtrack",
-  "Brazilian Samba Batucada Percussion Ensemble",
-];
+import catalog from '../preset_catalog.json';
 
-export const INSTRUMENT_SUGGESTIONS = [
-  "Heavily Digitally Distorted Harp Shimmer",
-  "Warm Vinyl Crackle Dusty Organ Chords",
-  "Supersaw Complextro Chords",
-  "Melodramatic Tremolo Mandolin",
-  "Trance Arpeggiated Synth",
-  "Baroque Cello Meets 90s Trance Euphoria",
-  "Polka Accordion",
-  "Dubstep Wobble Bass Synth",
-  "Medieval Rain",
-  "Granular Synthesis Frozen Vocal Textures",
-  "Slow Pad Sweeps Up",
-  "Cinematic Orchestral Hits",
-  "Violin Chamber Ensemble",
-  "Fanfare French Horn",
-  "Retro Synthwave Analog Lead",
-  "Ambient Pad Synthesizer",
-  "Bowed Vibraphone Sustained Metallic Ringing",
-  "Classical Cello",
-  "Delicate Vintage Music Box",
-  "Bluegrass Picked Banjo",
-  "Gentle Microtonal Flutes",
-  "Latin Mallet Marimba",
-  "Fingerpicked Acoustic Guitar",
-  "Chinese Guzheng",
-  "Euphoric Washed-Out Noise Pop Fuzz",
-  "Cavernous Endless Reverb Electric Guitar Swells",
-  "Orchestral Sustained Oboe",
-  "Nylon String Classical Guitar",
-];
+export type MagentaPreset = {
+  id: string;
+  name: string;
+  group: 'Jam' | 'Solo';
+  prompt: string;
+};
 
-export const ALL_SUGGESTIONS = [...PROMPT_SUGGESTIONS, ...INSTRUMENT_SUGGESTIONS];
+type PresetCatalog = {
+  version: number;
+  presets: MagentaPreset[];
+};
+
+export const PRESET_CATALOG_VERSION = (catalog as PresetCatalog).version;
+export const MAGENTA_PRESETS = (catalog as PresetCatalog).presets;
+export const PROMPT_SUGGESTIONS = MAGENTA_PRESETS
+  .filter((preset) => preset.group === 'Jam')
+  .map((preset) => preset.prompt);
+export const INSTRUMENT_SUGGESTIONS = MAGENTA_PRESETS
+  .filter((preset) => preset.group === 'Solo')
+  .map((preset) => preset.prompt);
+export const ALL_SUGGESTIONS = MAGENTA_PRESETS.map((preset) => preset.prompt);

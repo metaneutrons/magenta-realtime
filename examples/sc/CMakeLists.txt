@@ -137,3 +137,16 @@ add_custom_target(deploy_mrt2_sc
     COMMENT "Deploying MRT2 to ${SC_EXTENSIONS_DIR}/MRT2"
     VERBATIM
 )
+
+magentart_add_notarize_payload_target(notarize_mrt2_sc
+    SOURCE "$<TARGET_FILE:mrt2_sc>"
+    SOURCE_NAME "MRT2.scx"
+    DEPENDS mrt2_sc
+    ZIP_NAME "MRT2_SuperCollider.zip"
+    PAYLOAD_DIRECTORY "MRT2"
+    EXTRA_FILES
+        "$<TARGET_FILE_DIR:mrt2_sc>/mlx.metallib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/MRT2.sc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/example.scd"
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+)

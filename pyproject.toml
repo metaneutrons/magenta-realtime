@@ -48,14 +48,17 @@ dependencies = [
 # sequence_layers = { path = "magenta_rt/_vendor/sequence-layers", editable = true }
 
 [project.urls]
-Repository = "https://github.com/magenta/magenta-realtime"
-Issues = "https://github.com/magenta/magenta-realtime/issues"
+Repository = "https://github.com/metaneutrons/magenta-realtime"
+Issues = "https://github.com/metaneutrons/magenta-realtime/issues"
 
 # NOTE(vendoring): Once sequence-layers is on PyPI, add "sequence-layers[mlx]"
 # to mlx (recurrentgemma can then move back to jax-only).
 [project.optional-dependencies]
 jax = ["jax", "flax", "optax", "jaxtyping", "typing_extensions"]
-mlx = ["mlx", "flax", "typing_extensions"]
+# Keep the Python exporter on the same MLX release as the static C++ runtime
+# fetched by CMake. Updating this pin requires updating both CMakeLists.txt
+# files to the matching upstream tag.
+mlx = ["mlx==0.32.2", "flax", "typing_extensions"]
 dev = ["jupyter", "ipython", "pytest", "matplotlib", "pytest-cov"]
 
 # Listener-eval bulk generation

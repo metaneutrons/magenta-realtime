@@ -1,6 +1,21 @@
 {
   "name": "magenta-rt-v2-examples",
   "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm --filter magenta-rt-v2-ui run build && pnpm --filter jam-ui run build && pnpm --filter collider-ui run build",
+    "lint": "pnpm --filter magenta-rt-v2-ui run lint",
+    "typecheck": "pnpm --filter magenta-rt-v2-ui run typecheck && pnpm --filter jam-ui run typecheck && pnpm --filter collider-ui run typecheck",
+    "test": "pnpm run verify:presets",
+    "verify:presets": "node common/verify_preset_catalog.mjs",
+    "prepare": "node ./node_modules/lefthook/bin/index.js install"
+  },
+  "devDependencies": {
+    "lefthook": "^2.1.14"
+  },
   "workspaces": [
     "common/react_ui",
     "mrt2/react_ui",

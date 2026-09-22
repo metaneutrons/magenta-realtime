@@ -3,7 +3,14 @@ export { MagentaDropdown } from './MagentaDropdown';
 export { MidiSelector } from './MidiSelector';
 export type { MidiSource } from './MidiSelector';
 export { ModelSelector } from './ModelSelector';
-export { PROMPT_SUGGESTIONS, INSTRUMENT_SUGGESTIONS, ALL_SUGGESTIONS } from './promptSuggestion';
+export {
+  PRESET_CATALOG_VERSION,
+  MAGENTA_PRESETS,
+  PROMPT_SUGGESTIONS,
+  INSTRUMENT_SUGGESTIONS,
+  ALL_SUGGESTIONS,
+} from './promptSuggestion';
+export type { MagentaPreset } from './promptSuggestion';
 export { AudioMeter } from './AudioMeter';
 export { ResourceOnboardingModal } from './ResourceOnboardingModal';
 export { TimingIndicator } from './TimingIndicator';

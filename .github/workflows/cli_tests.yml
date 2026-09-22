@@ -1,125 +1,204 @@
-name: CLI, C++ Benchmark, and Core Build Tests
+name: CI
 
 on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
   pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   test-mlx:
-    runs-on: macos-14
-
+    name: Python, MLX, and benchmark
+    runs-on: macos-26
     steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: recursive
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          submodules: recursive
 
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: ""
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
-    - name: Set up Python
-      run: uv python install 3.12
+      - name: Set up the locked Python environment
+        run: uv sync --locked --extra mlx --extra dev
 
-    - name: Create Virtual Environment and Install
-      run: |
-        uv venv --python 3.12
-        source .venv/bin/activate
-        uv pip install -e ".[mlx,dev]"
-        uv pip install "cmake<3.28"
+      - name: Export a model for the C++ benchmark
+        run: >-
+          uv run mrt mlx export
+          --output-dir=outputs/exported_models
+          --skip-restore
+          --output-name=cpp_benchmark_mrt2_base
+          --model=mrt2_base
+          --num-layers=2
+          --model-dims=64
+          --hidden-dims=64
+          --num-cfgs=0
+          --bits=8
+          --num-codebooks=2
 
-    - name: Export Models for C++ Benchmark
-      run: |
-        source .venv/bin/activate
-        mrt mlx export --output-dir=outputs/exported_models --skip-restore --output-name=cpp_benchmark_mrt2_base --model=mrt2_base --num-layers=2 --model-dims=64 --hidden-dims=64 --num-cfgs=0 --bits=8 --num-codebooks=2
-    - name: CMake Configure
-      run: |
-        source .venv/bin/activate
-        uv run cmake core/src/benchmark -B benchmark_build
+      - name: Configure, compile, and execute the C++ benchmark
+        run: |
+          set -euo pipefail
+          uv run cmake core/src/benchmark -B benchmark_build
+          uv run cmake --build benchmark_build --target benchmark_mlxfn --parallel "$(sysctl -n hw.ncpu)"
+          ./benchmark_build/benchmark_mlxfn outputs/exported_models/cpp_benchmark_mrt2_base 2
 
-    - name: Compile and Run C++ Benchmark
-      run: |
-        source .venv/bin/activate
-        uv run cmake --build benchmark_build --target benchmark_mlxfn -j$(sysctl -n hw.ncpu)
-        ./benchmark_build/benchmark_mlxfn outputs/exported_models/cpp_benchmark_mrt2_base 2
+      - name: Download the small test checkpoint
+        run: |
+          set -euo pipefail
+          uv run mrt models init --source gcs
+          uv run mrt checkpoints download mrt2_small --source gcs
 
-    - name: Download small checkpoint for tests
-      run: |
-        source .venv/bin/activate
-        mrt models init --source gcs
-        mrt checkpoints download mrt2_small --source gcs
+      - name: Run Python tests with the established coverage floor
+        run: uv run pytest tests/ --cov=magenta_rt --cov-report=xml --cov-report=term --cov-fail-under=1
 
-    - name: Run tests with coverage
-      run: |
-        source .venv/bin/activate
-        pytest tests/ --cov=magenta_rt --cov-report=xml --cov-report=term
-
-    - name: Upload coverage report
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-report
-        path: coverage.xml
+      - name: Upload coverage report
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: error
 
   build-examples:
-    name: Build All Examples
-    runs-on: macos-14
+    name: TypeScript, C++, and application build
+    runs-on: macos-26
     steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: recursive
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          submodules: recursive
 
-    - name: Set up Node
-      uses: actions/setup-node@v6
-      with:
-        node-version: '20'
+      # Do not use Corepack: it is absent from current Node distributions.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12.4.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: examples/pnpm-lock.yaml
 
-    - name: Install and Build TypeScript Workspaces
-      run: |
-        cd examples
-        npm install
-        npm run build --workspaces --if-present
+      - name: Install and verify TypeScript workspaces
+        working-directory: examples
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run lint
+          pnpm run typecheck
+          pnpm run build
+          pnpm run test
+          node ./node_modules/lefthook/bin/index.js validate
 
-    - name: Install cmake
-      run: brew install cmake
+      - name: Install CMake
+        run: brew install cmake
 
-    - name: Configure CMake
-      run: cmake . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - name: Configure and test the native project
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build --target numpy_random_state_test --parallel "$(sysctl -n hw.ncpu)"
+          ctest --test-dir build --output-on-failure
 
-    - name: Compile and Run NumpyRandomState C++ Unit Test
-      # Note: This test is fully self-contained and has no external model/resource dependencies.
-      run: |
-        cmake --build build --target numpy_random_state_test -j$(sysctl -n hw.ncpu)
-        ./build/core/numpy_random_state_test
+      - name: Build all distributable application targets
+        run: |
+          set -euo pipefail
+          cmake --build build --target \
+            magentart_core \
+            hello_mrt2 \
+            mrt2_au \
+            mrt2_au_app \
+            mrt2_standalone \
+            mrt2_jam \
+            mrt2_collider \
+            mrt2_max \
+            mrt2_pd \
+            mrt2_sc \
+            --parallel "$(sysctl -n hw.ncpu)"
 
-    - name: Build C++ Core and Examples
-      run: |
-        cmake --build build --target \
-          magentart_core \
-          hello_mrt2 \
-          mrt2_au \
-          mrt2_au_app \
-          mrt2_standalone \
-          mrt2_jam \
-          mrt2_collider \
-          mrt2_max \
-          mrt2_pd \
-          mrt2_sc \
-          -j$(sysctl -n hw.ncpu)
+  security:
+    name: Secrets and dependency advisories
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12.4.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26'
+          cache: pnpm
+          cache-dependency-path: examples/pnpm-lock.yaml
+      - name: Audit production npm dependencies
+        working-directory: examples
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm audit --prod --audit-level moderate
+
+  commit-hygiene:
+    name: Commit hygiene
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Check pull request metadata and commit attribution
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          status=0
+          cc='^((feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+|Revert ".+")'
+          ban='^[[:space:]]*co-authored-by:.*(claude|anthropic)|^[[:space:]]*generated with.*claude code'
+
+          if ! printf '%s' "$PR_TITLE" | grep -Eq "$cc"; then
+            echo "::error::Pull request title does not follow Conventional Commits: $PR_TITLE"
+            status=1
+          fi
+          if printf '%s' "$PR_BODY" | grep -Eiq "$ban"; then
+            echo '::error::Pull request body contains an AI attribution trailer.'
+            status=1
+          fi
+          for sha in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
+            if git log -1 --format=%B "$sha" | grep -Eiq "$ban"; then
+              echo "::error::Commit $sha contains an AI attribution trailer."
+              status=1
+            fi
+            email=$(git log -1 --format='%ae%n%ce' "$sha")
+            if printf '%s' "$email" | grep -Fq 'noreply@anthropic.com'; then
+              echo "::error::Commit $sha has a forbidden AI attribution address."
+              status=1
+            fi
+          done
+          exit "$status"
+
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [test-mlx, build-examples, security, commit-hygiene]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every preceding job to succeed or be skipped
+        run: |
+          set -euo pipefail
+          printf '%s\n' '${{ toJSON(needs) }}' |
+            jq -e 'all(.[]; .result == "success" or .result == "skipped")'

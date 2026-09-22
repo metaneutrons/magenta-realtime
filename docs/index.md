@@ -1,6 +1,6 @@
 # Magenta RealTime 2
 
-[![CLI Tests](https://github.com/magenta/magenta-realtime/actions/workflows/cli_tests.yml/badge.svg)](https://github.com/magenta/magenta-realtime/actions/workflows/cli_tests.yml)
+[![CLI Tests](https://github.com/metaneutrons/magenta-realtime/actions/workflows/cli_tests.yml/badge.svg)](https://github.com/metaneutrons/magenta-realtime/actions/workflows/cli_tests.yml)
 
 Magenta RealTime 2 is a state-of-the-art open-weights model for real-time music generation.
 Use this project to run inference, build a DAW plugin, or embed the model into new applications of your imagination.
@@ -22,7 +22,7 @@ Efficient streaming audio generation library on Apple Silicon.
 
 :::{grid-item-card} {octicon}`device-desktop;1.5em;sd-mr-1` Example applications
 AUv3 plugin, standalone app, Jam, and Collider.
-Download them [here](https://magenta.withgoogle.com/mrt2).
+Download them from the [GitHub Releases page](https://github.com/metaneutrons/magenta-realtime/releases).
 :::
 ::::
 

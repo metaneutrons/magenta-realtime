@@ -39,7 +39,7 @@ or fetch with FetchContent:
 ```cmake
 include(FetchContent)
 FetchContent_Declare(magenta_rt_v2
-    GIT_REPOSITORY https://github.com/magenta/magenta-realtime.git
+    GIT_REPOSITORY https://github.com/metaneutrons/magenta-realtime.git
     GIT_TAG main)
 FetchContent_MakeAvailable(magenta_rt_v2)
 target_link_libraries(my_app PRIVATE magentart::core)

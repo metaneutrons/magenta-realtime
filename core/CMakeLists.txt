@@ -57,3 +57,4 @@ add_executable(numpy_random_state_test
     src/numpy_random_state_test.cpp
 )
 target_include_directories(numpy_random_state_test PRIVATE src)
+add_test(NAME numpy_random_state_test COMMAND numpy_random_state_test)

@@ -11,14 +11,14 @@ library_name: magenta-realtime-2
 
 -   [Get Started](https://magenta.withgoogle.com/mrt2)
 -   [Blog Post](https://magenta.withgoogle.com/magenta-realtime-2)
--   [Repository](https://github.com/magenta/magenta-realtime)
+-   [Repository](https://github.com/metaneutrons/magenta-realtime)
 -   [HuggingFace](https://huggingface.co/google/magenta-realtime-2)
 
 ## Terms of Use
 
 Magenta RealTime 2 is offered under a combination of licenses: the codebase is
 licensed under
-[Apache 2.0](https://github.com/magenta/magenta-realtime/blob/main/LICENSE), and
+[Apache 2.0](https://github.com/metaneutrons/magenta-realtime/blob/main/LICENSE), and
 the model weights under
 [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/legalcode).
 In addition, we specify the following usage terms:
@@ -169,7 +169,7 @@ performances, art installations, video games, and many other applications.
 ## How to Get Started with the Model
 
 See our [Get Started Page](https://magenta.withgoogle.com/mrt2)
-and [GitHub repository](https://github.com/magenta/magenta-realtime) for usage
+and [GitHub repository](https://github.com/metaneutrons/magenta-realtime) for usage
 examples.
 
 ## Training Details

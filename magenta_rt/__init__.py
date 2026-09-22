@@ -30,7 +30,7 @@ def __getattr__(name):
     except ImportError as e:
       raise ImportError(
           "MagentaRT2Jax requires JAX dependencies. "
-          "Install them with: pip install magenta-rt[jax]"
+          "From this source checkout, run: uv sync"
       ) from e
     return MagentaRT2System
   if name == "MagentaRT2Mlx":
@@ -39,7 +39,7 @@ def __getattr__(name):
     except ImportError as e:
       raise ImportError(
           "MagentaRT2Mlx requires MLX dependencies. "
-          "Install them with: pip install magenta-rt[mlx]"
+          "From this source checkout, run: uv sync --extra mlx"
       ) from e
     return MagentaRT2System
   if name == "MagentaRT2StdMlxfn":
@@ -48,7 +48,7 @@ def __getattr__(name):
     except ImportError as e:
       raise ImportError(
           "MagentaRTV2SystemStdMlxfn requires MLX dependencies. "
-          "Install them with: pip install magenta-rt[mlx]"
+          "From this source checkout, run: uv sync --extra mlx"
       ) from e
     return MagentaRT2SystemStdMlxfn
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

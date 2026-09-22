@@ -19,22 +19,29 @@
 
 using magentart::core::RealtimeRunner;
 
+NS_ASSUME_NONNULL_BEGIN
+
 @interface MagentaRTAudioUnit : AUAudioUnit
 
-@property (nonatomic, strong) NSArray<NSDictionary*>* prompts;
-@property (nonatomic, copy) NSString* modelName;
-@property (nonatomic, strong) NSData* modelBookmark;
-@property (nonatomic, strong) NSDictionary* promptSurfaceState;
-@property (nonatomic, copy) NSString* musicCocaModelName;
-@property (nonatomic, copy) NSString* statePrefix;
+@property (nonatomic, strong, nullable) NSArray<NSDictionary*>* prompts;
+@property (nonatomic, copy, nullable) NSString* modelName;
+@property (nonatomic, strong, nullable) NSData* modelBookmark;
+@property (nonatomic, strong, nullable) NSDictionary* promptSurfaceState;
+@property (nonatomic, copy, nullable) NSString* musicCocaModelName;
+@property (nonatomic, copy, nullable) NSString* statePrefix;
 @property (nonatomic, assign) BOOL uiPlaying;
+@property (nonatomic, copy, readonly) NSArray<NSDictionary*>* presetCatalog;
+@property (nonatomic, copy, readonly, nullable) NSString* activePresetIdentifier;
 
 - (RealtimeRunner*)engine;
 - (void)pollOfflineState;
 - (void)setNoteOn:(uint8_t)note on:(BOOL)on;
 - (NSArray<NSNumber*>*)activeNotes;
 - (void)readAudioLevels:(float*)outLeft right:(float*)outRight;
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index;
 @end
 
 @interface MagentaRTViewController : AUViewController <AUAudioUnitFactory>
 @end
+
+NS_ASSUME_NONNULL_END
