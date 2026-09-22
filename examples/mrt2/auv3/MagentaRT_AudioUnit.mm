@@ -52,6 +52,7 @@ static BOOL isDevServerRunning(void) {
 @property (nonatomic, copy, readwrite) NSArray<NSDictionary*>* presetCatalog;
 @property (nonatomic, copy, readwrite, nullable) NSString* activePresetIdentifier;
 - (void)applyPromptsToEngine;
+- (void)synchronizeWeightParametersFromPrompts;
 - (BOOL)selectFactoryPresetAtIndex:(NSInteger)index synchronizeParameter:(BOOL)synchronizeParameter;
 #if MAGENTART_DEBUG_LOG
 @property (nonatomic, copy) void (^debugLogHandler)(NSString *);
@@ -573,13 +574,19 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 
     _engine.set_text_prompts(texts, weights);
     _engine.set_blend_weights(weights.data(), (int)weights.size());
+}
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        for (int i = 0; i < (int)weights.size() && i < 6; ++i) {
-            AUParameter* weightParameter = [self->_parameterTree parameterWithAddress:10 + i];
-            if (weightParameter) [weightParameter setValue:weights[i] originator:nil];
-        }
-    });
+- (void)synchronizeWeightParametersFromPrompts {
+    // Applying state or loading a model may occur after the host has restored
+    // automation. Those paths must update the engine only. Explicit editor and
+    // factory-preset selections call this method to intentionally publish
+    // their prompt weights to the AU parameter tree.
+    for (NSUInteger i = 0; i < self.prompts.count && i < 6; ++i) {
+        NSNumber* weight = self.prompts[i][@"weight"];
+        if (![weight isKindOfClass:[NSNumber class]]) continue;
+        AUParameter* weightParameter = [_parameterTree parameterWithAddress:10 + i];
+        if (weightParameter) [weightParameter setValue:weight.floatValue originator:nil];
+    }
 }
 
 - (BOOL)selectFactoryPresetAtIndex:(NSInteger)index synchronizeParameter:(BOOL)synchronizeParameter {
@@ -601,6 +608,7 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     }];
     self.activePresetIdentifier = descriptor[@"id"];
     [self applyPromptsToEngine];
+    [self synchronizeWeightParametersFromPrompts];
 
     AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
     current.number = index;
@@ -1439,7 +1447,10 @@ static NSString* bankFilePathAU(int index) {
 
     NSMutableDictionary* params = [NSMutableDictionary dictionary];
     NSMutableDictionary* weightChanges = [NSMutableDictionary dictionary];
-    for (int i = 0; i <= 46; i++) {
+    // Keep the editor bridge in lockstep with the complete public parameter
+    // schema. In particular, host automation of Factory Preset must also
+    // update the editor's selected preset.
+    for (int i = 0; i <= 49; i++) {
         NSString* key = paramKeyForAddress(i);
         if (!key) continue;
         AUParameter* param = [au.parameterTree parameterWithAddress:i];
@@ -1501,6 +1512,9 @@ static NSString* paramKeyForAddress(AUParameterAddress address) {
         case 44: return @"drums_mute_other";
         case 45: return @"midigate";
         case 46: return @"onsetmode";
+        case 47: return @"seedrotation";
+        case 48: return @"cfgdrums";
+        case 49: return @"factorypreset";
         default:
             return nil;
     }
@@ -1516,7 +1530,7 @@ static BOOL paramIsBool(AUParameterAddress address) {
     if (!au) return;
 
     NSMutableDictionary* initialParams = [NSMutableDictionary dictionary];
-    for (int i = 0; i <= 46; i++) {
+    for (int i = 0; i <= 49; i++) {
         // Skip weight params — prompts carry their own weights via textPrompts.
         if (i >= 10 && i <= 15) continue;
         AUParameter* param = [au.parameterTree parameterWithAddress:i];
@@ -1710,6 +1724,7 @@ static BOOL paramIsBool(AUParameterAddress address) {
                 MagentaRTAudioUnit* au = (MagentaRTAudioUnit*)_audioUnit;
                 au.prompts = promptsArray;
                 [au applyPromptsToEngine];
+                [au synchronizeWeightParametersFromPrompts];
                 // Flag so the polling loop knows this weight change came from the UI
                 // (not DAW automation) and should not trigger a mode switch.
                 _weightChangeFromUI = YES;

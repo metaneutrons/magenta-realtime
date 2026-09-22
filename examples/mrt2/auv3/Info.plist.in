@@ -48,7 +48,7 @@
                     <key>version</key>
                     <!-- Bump whenever the exposed AU parameter schema changes. Hosts
                          such as Ableton Live cache that schema by component version. -->
-                    <integer>6</integer>
+                    <integer>7</integer>
                     <key>sandboxSafe</key>
                     <true/>
                     <key>tags</key>
