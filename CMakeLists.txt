@@ -45,7 +45,7 @@ set(CMAKE_OBJCXX_STANDARD 20)
 set(ABSL_INTERNAL_AT_LEAST_CXX20 ON CACHE BOOL "Force Abseil C++20 support")
 set(ABSL_PROPAGATE_CXX_STD ON)
 
-set(MAGENTART_VERSION "2.0.3") # x-release-please-version
+set(MAGENTART_VERSION "2.0.4") # x-release-please-version
 add_definitions(-DMAGENTART_VERSION="${MAGENTART_VERSION}")
 
 # Fetch Git SHA

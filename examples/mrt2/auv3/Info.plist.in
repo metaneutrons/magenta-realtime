@@ -46,7 +46,9 @@
                     <key>factoryFunction</key>
                     <string>MagentaRTViewController</string>
                     <key>version</key>
-                    <integer>5</integer>
+                    <!-- Bump whenever the exposed AU parameter schema changes. Hosts
+                         such as Ableton Live cache that schema by component version. -->
+                    <integer>6</integer>
                     <key>sandboxSafe</key>
                     <true/>
                     <key>tags</key>
