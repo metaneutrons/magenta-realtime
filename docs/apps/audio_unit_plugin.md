@@ -45,6 +45,12 @@ available from both the plug-in's **Presets** menu and a DAW's native Audio
 Unit preset browser. The menu groups the library into **Jam** and **Solo**
 prompt suggestions.
 
+The same list is exposed to the host as the discrete **Factory Preset**
+parameter. In Ableton Live, select that parameter in the device's automation
+chooser to automate factory-preset changes. A change made in the plug-in menu
+updates this parameter too, so the host and plug-in show the same factory
+preset. Live displays the preset names rather than the numeric values.
+
 Factory presets change the prompt only. They deliberately do not restore a
 transformer bank, random state, or audio-prefill context, because those are
 time- and model-specific musical states rather than reusable sound designs.

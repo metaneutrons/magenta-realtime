@@ -22,6 +22,7 @@
 #import "MagentaModelDownloader.h"
 #include "magenta_paths.h"
 #include "audio_level_processor.h"
+#include <cmath>
 #include <cstring>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -51,6 +52,7 @@ static BOOL isDevServerRunning(void) {
 @property (nonatomic, copy, readwrite) NSArray<NSDictionary*>* presetCatalog;
 @property (nonatomic, copy, readwrite, nullable) NSString* activePresetIdentifier;
 - (void)applyPromptsToEngine;
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index synchronizeParameter:(BOOL)synchronizeParameter;
 #if MAGENTART_DEBUG_LOG
 @property (nonatomic, copy) void (^debugLogHandler)(NSString *);
 #endif
@@ -134,6 +136,13 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     void* _musicalContextBlockPtr;   // raw pointer for render thread (no ARC)
     NSMutableArray* _pendingLogs;
     std::atomic<bool> _midiNotes[128];
+    // Parameter automation is delivered on the realtime render thread.  It
+    // can only enqueue a factory-preset request; applying a prompt starts
+    // asynchronous work and must happen on the main thread.
+    std::atomic<int> _pendingFactoryPresetIndex;
+    std::atomic<int> _factoryPresetParameterValue;
+    NSInteger _activeFactoryPresetIndex;
+    dispatch_source_t _factoryPresetTimer;
     magentart::common::AudioLevelProcessor _levelProcessor;
 }
 
@@ -171,6 +180,9 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
         [factoryPresets addObject:factoryPreset];
     }];
     _factoryPresets = [factoryPresets copy];
+    _pendingFactoryPresetIndex.store(-1, std::memory_order_relaxed);
+    _factoryPresetParameterValue.store(0, std::memory_order_relaxed);
+    _activeFactoryPresetIndex = NSNotFound;
 
     for (int i = 0; i < 128; i++) {
         _midiNotes[i].store(false, std::memory_order_relaxed);
@@ -282,9 +294,25 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 
     AUParameter* cfgDrumsParam = makeParam(@"cfgdrums", @"Drums Adherence", 48, -1.0, 7.0, 1.0);
 
+    // This mirrors the factory preset list as a discrete AU parameter so a
+    // DAW can expose and automate it.  It deliberately uses the same zero-
+    // based ordering as factoryPresets/currentPreset.
+    NSMutableArray<NSString*>* factoryPresetNames =
+        [NSMutableArray arrayWithCapacity:_factoryPresets.count];
+    for (AUAudioUnitPreset* preset in _factoryPresets) {
+        [factoryPresetNames addObject:preset.name];
+    }
+    AUParameter* factoryPresetParam = [AUParameterTree
+        createParameterWithIdentifier:@"factorypreset" name:@"Factory Preset" address:49
+        min:0.0 max:MAX(0, (NSInteger)_factoryPresets.count - 1)
+        unit:kAudioUnitParameterUnit_Indexed unitName:nil
+        flags:kAudioUnitParameterFlag_IsWritable | kAudioUnitParameterFlag_IsReadable
+        valueStrings:factoryPresetNames dependentParameters:nil];
+    factoryPresetParam.value = 0.0;
+
     NSMutableArray* allParams = [NSMutableArray arrayWithArray:@[
         tempParam, topkParam, cfgMusicCoCaParam, cfgNotesParam, volParam, muteParam, unmaskWidthParam, bufSizeParam, latencyCompParam,
-        cfgDrumsParam
+        cfgDrumsParam, factoryPresetParam
     ]];
     [allParams addObjectsFromArray:weightParams];
     [allParams addObjectsFromArray:@[resetParam, bypassParam, seedRotationParam]];
@@ -331,6 +359,11 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
         else if (param.address == 46) weakSelf->_engine.set_onset_mode(value > 0.5f);
         else if (param.address == 48) weakSelf->_engine.set_cfg_drums(value);
         else if (param.address == 47) weakSelf->_engine.set_seed_rotation((int)value);
+        else if (param.address == 49) {
+            int presetIndex = (int)lroundf(value);
+            weakSelf->_factoryPresetParameterValue.store(presetIndex, std::memory_order_relaxed);
+            weakSelf->_pendingFactoryPresetIndex.store(presetIndex, std::memory_order_release);
+        }
     };
     _parameterTree.implementorValueProvider = ^AUValue(AUParameter* param) {
         if (param.address == 0) return weakSelf->_engine.get_temperature();
@@ -355,6 +388,9 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
         else if (param.address == 46) return weakSelf->_engine.get_onset_mode() ? 1.0f : 0.0f;
         else if (param.address == 48) return weakSelf->_engine.get_cfg_drums();
         else if (param.address == 47) return (AUValue)weakSelf->_engine.get_seed_rotation();
+        else if (param.address == 49) {
+            return (AUValue)weakSelf->_factoryPresetParameterValue.load(std::memory_order_relaxed);
+        }
         return 0.0;
     };
 
@@ -389,6 +425,29 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     // Keeping this state ourselves follows Apple's AUv3 reference pattern.
     self.currentPreset = _factoryPresets.firstObject;
 
+    // Host automation is delivered to the render callback even while the
+    // plug-in editor is closed. Poll the lock-free request independently of
+    // the editor's metrics timer, then apply it on the main queue.
+    __weak MagentaRTAudioUnit* timerSelf = self;
+    _factoryPresetTimer = dispatch_source_create(
+        DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+        dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    dispatch_source_set_timer(_factoryPresetTimer,
+                              dispatch_time(DISPATCH_TIME_NOW, 0),
+                              20 * NSEC_PER_MSEC,
+                              5 * NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(_factoryPresetTimer, ^{
+        MagentaRTAudioUnit* strongSelf = timerSelf;
+        if (!strongSelf) return;
+        int requestedPreset = strongSelf->_pendingFactoryPresetIndex.exchange(
+            -1, std::memory_order_acq_rel);
+        if (requestedPreset < 0) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [strongSelf selectFactoryPresetAtIndex:requestedPreset synchronizeParameter:NO];
+        });
+    });
+    dispatch_resume(_factoryPresetTimer);
+
     return self;
 }
 
@@ -397,6 +456,14 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 }
 
 - (void)pollOfflineState {
+    // Apply preset automation outside the render callback. Selecting a preset
+    // changes prompts and may wake the text-conditioning worker, neither of
+    // which is realtime-safe.
+    int requestedPreset = _pendingFactoryPresetIndex.exchange(-1, std::memory_order_acq_rel);
+    if (requestedPreset >= 0) {
+        [self selectFactoryPresetAtIndex:requestedPreset synchronizeParameter:NO];
+    }
+
     _isOffline = self.isRenderingOffline;
 
     // Cache the transport block once it becomes available.  The host may
@@ -464,6 +531,9 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
 }
 
 - (void)dealloc {
+    if (_factoryPresetTimer) {
+        dispatch_source_cancel(_factoryPresetTimer);
+    }
     _engine.stop();
     _engine.unload();
 }
@@ -512,8 +582,13 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     });
 }
 
-- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index {
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index synchronizeParameter:(BOOL)synchronizeParameter {
     if (index < 0 || index >= (NSInteger)self.presetCatalog.count) return NO;
+
+    // A local selection writes the AU parameter, which also queues this same
+    // index through its observer. Avoid re-encoding the prompt when that
+    // queued notification is drained on the next UI tick.
+    if (_activeFactoryPresetIndex == index) return YES;
 
     NSDictionary* descriptor = self.presetCatalog[(NSUInteger)index];
     NSString* prompt = descriptor[@"prompt"];
@@ -526,25 +601,41 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     }];
     self.activePresetIdentifier = descriptor[@"id"];
     [self applyPromptsToEngine];
+
+    AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
+    current.number = index;
+    current.name = self.factoryPresets[(NSUInteger)index].name;
+    _currentPreset = current;
+    _activeFactoryPresetIndex = index;
+    _factoryPresetParameterValue.store((int)index, std::memory_order_relaxed);
+
+    if (synchronizeParameter) {
+        AUParameter* parameter = [_parameterTree parameterWithAddress:49];
+        if (parameter) {
+            [parameter setValue:(AUValue)index originator:nil];
+        }
+    }
     return YES;
+}
+
+// Public preset-selection API retained for callers outside this implementation.
+- (BOOL)selectFactoryPresetAtIndex:(NSInteger)index {
+    return [self selectFactoryPresetAtIndex:index synchronizeParameter:YES];
 }
 
 - (void)setCurrentPreset:(AUAudioUnitPreset*)preset {
     if (!preset) {
         self.activePresetIdentifier = nil;
         _currentPreset = nil;
+        _activeFactoryPresetIndex = NSNotFound;
         return;
     }
 
     if (preset.number >= 0) {
-        if (![self selectFactoryPresetAtIndex:preset.number]) {
+        if (![self selectFactoryPresetAtIndex:preset.number synchronizeParameter:YES]) {
             NSLog(@"MagentaRT_AU: unknown factory preset number %ld.", (long)preset.number);
             return;
         }
-        AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
-        current.number = preset.number;
-        current.name = preset.name;
-        _currentPreset = current;
         return;
     }
 
@@ -556,6 +647,7 @@ static NSArray<NSDictionary*>* LoadPresetCatalog(void) {
     }
     [self setFullState:state];
     self.activePresetIdentifier = nil;
+    _activeFactoryPresetIndex = NSNotFound;
     AUAudioUnitPreset* current = [[AUAudioUnitPreset alloc] init];
     current.number = preset.number;
     current.name = preset.name;
@@ -915,6 +1007,11 @@ static OSStatus ConverterDataProc(AudioConverterRef inAudioConverter,
                 else if (paramEvent.parameterAddress == 45) engine->set_midi_gate_enabled(paramEvent.value > 0.5f);
                 else if (paramEvent.parameterAddress == 46) engine->set_onset_mode(paramEvent.value > 0.5f);
                 else if (paramEvent.parameterAddress == 48) engine->set_cfg_drums(paramEvent.value);
+                else if (paramEvent.parameterAddress == 49) {
+                    int presetIndex = (int)lroundf(paramEvent.value);
+                    unsafeSelf->_factoryPresetParameterValue.store(presetIndex, std::memory_order_relaxed);
+                    unsafeSelf->_pendingFactoryPresetIndex.store(presetIndex, std::memory_order_release);
+                }
             } else if (event->head.eventType == AURenderEventMIDI) {
                 const AUMIDIEvent& midiEvent = event->MIDI;
                 uint8_t status = midiEvent.data[0] & 0xF0;
