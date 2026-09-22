@@ -14,18 +14,41 @@
  * limitations under the License.
  */
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { ModelSelector, MidiSelector, ResourceOnboardingModal, AudioMeter, Knob, MagentaToggle, MagentaDropdown, ALL_COLORS, TransportControls, TimingIndicator, PromptSurface, calculateWeights, MAGENTA_PRESETS, ALL_SUGGESTIONS, DEFAULT_TEMPERATURE, DEFAULT_TOPK, DEFAULT_CFG_MUSICCOCA, DEFAULT_CFG_NOTES, DEFAULT_CFG_DRUMS, DEFAULT_VOLUME, DEFAULT_UNMASK_WIDTH, DEFAULT_BUFFER_SIZE } from '@magenta-rt/common';
-import { MagentaSlider } from './components/MagentaSlider';
-import { PianoKeyboard } from './components/PianoKeyboard';
-import type { PromptNode, ListenerNode, MidiSource } from '@magenta-rt/common';
+import {useState, useEffect, useLayoutEffect, useRef, useCallback} from 'react';
+import {
+  ModelSelector,
+  MidiSelector,
+  ResourceOnboardingModal,
+  AudioMeter,
+  Knob,
+  MagentaToggle,
+  MagentaDropdown,
+  ALL_COLORS,
+  TransportControls,
+  TimingIndicator,
+  PromptSurface,
+  calculateWeights,
+  MAGENTA_PRESETS,
+  ALL_SUGGESTIONS,
+  DEFAULT_TEMPERATURE,
+  DEFAULT_TOPK,
+  DEFAULT_CFG_MUSICCOCA,
+  DEFAULT_CFG_NOTES,
+  DEFAULT_CFG_DRUMS,
+  DEFAULT_VOLUME,
+  DEFAULT_UNMASK_WIDTH,
+  DEFAULT_BUFFER_SIZE,
+} from '@magenta-rt/common';
+import {MagentaSlider} from './components/MagentaSlider';
+import {PianoKeyboard} from './components/PianoKeyboard';
+import type {PromptNode, ListenerNode, MidiSource} from '@magenta-rt/common';
 import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import ListSubheader from '@mui/material/ListSubheader';
 
-import { PromptRow } from './components/PromptRow';
+import {PromptRow} from './components/PromptRow';
 import Tooltip from '@mui/material/Tooltip';
-import { InfoOutlined } from '@mui/icons-material';
+import {InfoOutlined} from '@mui/icons-material';
 
 // ── Native bridge types ──
 declare global {
@@ -64,11 +87,23 @@ const SYNC_SURFACE_WEIGHTS_TO_LIST_ON_SWITCH = false;
 
 // Map AU parameter addresses to state keys
 const paramKeyForAddress: Record<number, string> = {
-  0: 'temperature', 1: 'topk', 3: 'cfgmusiccoca', 4: 'cfgnotes',
-  5: 'volume', 6: 'mute', 7: 'unmaskwidth', 8: 'buffersize', 9: 'latencycomp',
-  10: 'weight_0', 11: 'weight_1', 12: 'weight_2',
-  13: 'weight_3', 14: 'weight_4', 15: 'weight_5',
-  31: 'resetstate', 32: 'bypass',
+  0: 'temperature',
+  1: 'topk',
+  3: 'cfgmusiccoca',
+  4: 'cfgnotes',
+  5: 'volume',
+  6: 'mute',
+  7: 'unmaskwidth',
+  8: 'buffersize',
+  9: 'latencycomp',
+  10: 'weight_0',
+  11: 'weight_1',
+  12: 'weight_2',
+  13: 'weight_3',
+  14: 'weight_4',
+  15: 'weight_5',
+  31: 'resetstate',
+  32: 'bypass',
   39: 'drumless',
   45: 'midigate',
   46: 'onsetmode',
@@ -83,8 +118,23 @@ const boolParams = new Set([6, 9, 31, 32, 39, 45, 46]);
 // black keys (C# D# F# G# A#). Upper octave continues on K O L P ; (C C# D D# E).
 // Z / X shift the base octave down/up.
 const KEY_TO_SEMITONE: Record<string, number> = {
-  a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11,
-  k: 12, o: 13, l: 14, p: 15, ';': 16,
+  a: 0,
+  w: 1,
+  s: 2,
+  e: 3,
+  d: 4,
+  f: 5,
+  t: 6,
+  g: 7,
+  y: 8,
+  h: 9,
+  u: 10,
+  j: 11,
+  k: 12,
+  o: 13,
+  l: 14,
+  p: 15,
+  ';': 16,
 };
 const KEYBOARD_MIDI_BASE_DEFAULT = 48; // C3 in MIDI
 
@@ -99,8 +149,12 @@ const DEFAULT_PARAMS = {
   unmaskwidth: DEFAULT_UNMASK_WIDTH,
   buffersize: DEFAULT_BUFFER_SIZE,
   latencycomp: false,
-  weight_0: 0, weight_1: 0, weight_2: 0,
-  weight_3: 0, weight_4: 0, weight_5: 0,
+  weight_0: 0,
+  weight_1: 0,
+  weight_2: 0,
+  weight_3: 0,
+  weight_4: 0,
+  weight_5: 0,
   resetstate: false,
   bypass: false,
   seedrotation: 0,
@@ -111,10 +165,14 @@ const DEFAULT_PARAMS = {
 
 // Default surface positions (normalised 0–1) — purely frontend state
 const DEFAULT_SURFACE_POSITIONS = [
-  { x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.5, y: 0.8 },
-  { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 },
+  {x: 0.2, y: 0.2},
+  {x: 0.8, y: 0.2},
+  {x: 0.5, y: 0.8},
+  {x: 0.5, y: 0.5},
+  {x: 0.5, y: 0.5},
+  {x: 0.5, y: 0.5},
 ];
-const DEFAULT_CURSOR = { x: 0.5, y: 0.5 };
+const DEFAULT_CURSOR = {x: 0.5, y: 0.5};
 
 declare const __COMMIT_HASH__: string;
 
@@ -124,12 +182,12 @@ export default function App() {
     for (const addr of addresses) {
       const key = paramKeyForAddress[addr] as keyof typeof DEFAULT_PARAMS;
       const val = DEFAULT_PARAMS[key];
-      sendParamChange(addr, typeof val === 'boolean' ? (val ? 1 : 0) : val as number);
+      sendParamChange(addr, typeof val === 'boolean' ? (val ? 1 : 0) : (val as number));
     }
   }
 
   // ── State ──
-  const [params, setParams] = useState({ ...DEFAULT_PARAMS });
+  const [params, setParams] = useState({...DEFAULT_PARAMS});
 
   const [metrics, setMetrics] = useState({
     frameMs: 0,
@@ -147,18 +205,17 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
-  const [modelName, setModelName] = useState("No model loaded");
+  const [modelName, setModelName] = useState('No model loaded');
   const [localModels, setLocalModels] = useState<string[]>([]);
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<any>(null);
-  const [downloadPath, setDownloadPath] = useState("~/Documents/Magenta/magenta-rt-v2/models");
+  const [downloadPath, setDownloadPath] = useState('~/Documents/Magenta/magenta-rt-v2/models');
 
   // Onboarding States
   const [resourcesMissing, setResourcesMissing] = useState(false);
   const [resourcesProgress, setResourcesProgress] = useState<any>(null);
   const [isFetchingModels, setIsFetchingModels] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
-
 
   const [bankStatus, setBankStatus] = useState([false, false, false]);
   const [lastRestoredBank, setLastRestoredBank] = useState<string>('factory');
@@ -172,13 +229,20 @@ export default function App() {
   const keyboardBaseNote = useRef(KEYBOARD_MIDI_BASE_DEFAULT);
   const pressedKeys = useRef<Map<string, number>>(new Map());
   const [octaveOffset, setOctaveOffset] = useState(0);
-  const [prompts, setPrompts] = useState<Array<{ text: string; weight: number; isAudio: boolean; colorIndex: number }>>(() => {
-    return SHUFFLED_SUGGESTIONS.slice(0, 2).map((text, i) => ({ text, weight: 1.0, isAudio: false, colorIndex: i }));
+  const [prompts, setPrompts] = useState<
+    Array<{text: string; weight: number; isAudio: boolean; colorIndex: number}>
+  >(() => {
+    return SHUFFLED_SUGGESTIONS.slice(0, 2).map((text, i) => ({
+      text,
+      weight: 1.0,
+      isAudio: false,
+      colorIndex: i,
+    }));
   });
   const nextColorIndex = useRef(2);
 
   const promptSurfaceRef = useRef<HTMLDivElement>(null);
-  const [stageSize, setStageSize] = useState({ w: 340, h: 275 });
+  const [stageSize, setStageSize] = useState({w: 340, h: 275});
   const [selectedBallId, setSelectedBallId] = useState<number | null>(null);
   const [mixMode, setMixMode] = useState<'surface' | 'list'>('list');
   const [newPromptText, setNewPromptText] = useState('');
@@ -196,9 +260,9 @@ export default function App() {
     if (!el) return;
 
     const measure = () => {
-      const { width, height } = el.getBoundingClientRect();
+      const {width, height} = el.getBoundingClientRect();
       if (width > 0 && height > 0) {
-        setStageSize({ w: Math.round(width), h: Math.round(height) });
+        setStageSize({w: Math.round(width), h: Math.round(height)});
       }
     };
 
@@ -210,7 +274,7 @@ export default function App() {
 
   // Compute activeNodes and listenerNode in pixel coordinates from local state
   const activeNodes: PromptNode[] = prompts.map((p, i) => {
-    const pos = surfacePositions[i] ?? { x: 0.5, y: 0.5 };
+    const pos = surfacePositions[i] ?? {x: 0.5, y: 0.5};
     return {
       id: i,
       x: pos.x * stageSize.w,
@@ -218,7 +282,7 @@ export default function App() {
       label: p.text,
       colorIndex: p.colorIndex,
       isAudio: p.isAudio,
-      loading: (metrics.textEncoderStatusColors?.[i] === 1) || localLoadingIndices.has(i),
+      loading: metrics.textEncoderStatusColors?.[i] === 1 || localLoadingIndices.has(i),
     };
   });
 
@@ -231,7 +295,7 @@ export default function App() {
   const sendSurfaceWeights = (nodes: PromptNode[], listener: ListenerNode) => {
     const weights = calculateWeights(listener, nodes);
     setPrompts(prev => {
-      const next = prev.map((p, i) => ({ ...p, weight: weights[i] ?? 0 }));
+      const next = prev.map((p, i) => ({...p, weight: weights[i] ?? 0}));
       postNormalizedPrompts(next);
       return next;
     });
@@ -239,43 +303,44 @@ export default function App() {
 
   const handlePromptMove = (id: number, x_pixel: number, y_pixel: number) => {
     const x_norm = x_pixel / stageSize.w;
-    const y_norm = 1.0 - (y_pixel / stageSize.h);
+    const y_norm = 1.0 - y_pixel / stageSize.h;
     setSurfacePositions(prev => {
       const next = [...prev];
-      next[id] = { x: x_norm, y: y_norm };
+      next[id] = {x: x_norm, y: y_norm};
       return next;
     });
     // Recompute IDW weights with the moved prompt
-    const updatedNodes = activeNodes.map((n, i) =>
-      i === id ? { ...n, x: x_pixel, y: y_pixel } : n
-    );
+    const updatedNodes = activeNodes.map((n, i) => (i === id ? {...n, x: x_pixel, y: y_pixel} : n));
     sendSurfaceWeights(updatedNodes, listenerNode);
   };
 
   const handleListenerMove = (x_pixel: number, y_pixel: number) => {
     const x_norm = x_pixel / stageSize.w;
-    const y_norm = 1.0 - (y_pixel / stageSize.h);
-    setCursorPos({ x: x_norm, y: y_norm });
+    const y_norm = 1.0 - y_pixel / stageSize.h;
+    setCursorPos({x: x_norm, y: y_norm});
     // Recompute IDW weights with the moved listener
-    const updatedListener = { x: x_pixel, y: y_pixel };
+    const updatedListener = {x: x_pixel, y: y_pixel};
     sendSurfaceWeights(activeNodes, updatedListener);
   };
 
   const handleNodeAdded = (x_pixel: number, y_pixel: number) => {
     if (prompts.length >= MAX_PROMPTS) return;
     const x_norm = x_pixel / stageSize.w;
-    const y_norm = 1.0 - (y_pixel / stageSize.h);
+    const y_norm = 1.0 - y_pixel / stageSize.h;
 
     const randomIdx = Math.floor(Math.random() * ALL_SUGGESTIONS.length);
     const suggestedText = ALL_SUGGESTIONS[randomIdx];
 
     setSurfacePositions(prev => {
       const next = [...prev];
-      next[prompts.length] = { x: x_norm, y: y_norm };
+      next[prompts.length] = {x: x_norm, y: y_norm};
       return next;
     });
     setPrompts(currentPrompts => {
-      const next = [...currentPrompts, { text: suggestedText, weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++ }];
+      const next = [
+        ...currentPrompts,
+        {text: suggestedText, weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++},
+      ];
       postNormalizedPrompts(next);
       return next;
     });
@@ -303,9 +368,9 @@ export default function App() {
   const sendParamChange = (index: number, value: number) => {
     const key = paramKeyForAddress[index];
     if (key) {
-      setParams(p => ({ ...p, [key]: boolParams.has(index) ? value > 0.5 : value }));
+      setParams(p => ({...p, [key]: boolParams.has(index) ? value > 0.5 : value}));
     }
-    postMessage({ type: 'param', index, value });
+    postMessage({type: 'param', index, value});
   };
 
   // will need later
@@ -350,16 +415,18 @@ export default function App() {
   const postNormalizedPrompts = (promptsList: typeof prompts) => {
     // Send raw weights — the C++ engine normalises at inference time.
     const mapped = promptsList.map(p => ({
-      text: p.text, weight: p.weight, isAudio: p.isAudio,
+      text: p.text,
+      weight: p.weight,
+      isAudio: p.isAudio,
     }));
-    postMessage({ type: 'textPrompts', value: mapped });
+    postMessage({type: 'textPrompts', value: mapped});
   };
 
   const handlePromptTextChange = (idx: number, text: string) => {
     setLocalLoadingIndices(prev => new Set(prev).add(idx));
     setPrompts(currentPrompts => {
       const next = [...currentPrompts];
-      next[idx] = { ...next[idx], text };
+      next[idx] = {...next[idx], text};
       postNormalizedPrompts(next);
       return next;
     });
@@ -368,7 +435,7 @@ export default function App() {
   const handlePromptWeightChange = (idx: number, weight: number) => {
     setPrompts(currentPrompts => {
       const next = [...currentPrompts];
-      next[idx] = { ...next[idx], weight };
+      next[idx] = {...next[idx], weight};
       postNormalizedPrompts(next);
       return next;
     });
@@ -386,27 +453,30 @@ export default function App() {
   const handlePromptUpload = (idx: number) => {
     setLocalLoadingIndices(prev => new Set(prev).add(idx));
     // Tell native host to open file picker and load audio for this prompt index
-    postMessage({ type: 'loadAudioPrompt', index: idx });
+    postMessage({type: 'loadAudioPrompt', index: idx});
   };
 
   const handleClearAudio = (idx: number) => {
     setPrompts(currentPrompts => {
       const next = [...currentPrompts];
-      next[idx] = { ...next[idx], text: '', isAudio: false };
+      next[idx] = {...next[idx], text: '', isAudio: false};
       postNormalizedPrompts(next);
       return next;
     });
     // Tell native to clear the audio prompt for this slot
-    postMessage({ type: 'clearAudioPrompt', index: idx });
+    postMessage({type: 'clearAudioPrompt', index: idx});
   };
 
   const handleAddPromptWithText = (text: string) => {
     if (prompts.length >= MAX_PROMPTS) return;
     const rx = 0.2 + Math.random() * 0.6;
     const ry = 0.2 + Math.random() * 0.6;
-    setSurfacePositions(prev => [...prev, { x: rx, y: ry }]);
+    setSurfacePositions(prev => [...prev, {x: rx, y: ry}]);
     setPrompts(currentPrompts => {
-      const next = [...currentPrompts, { text, weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++ }];
+      const next = [
+        ...currentPrompts,
+        {text, weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++},
+      ];
       postNormalizedPrompts(next);
       return next;
     });
@@ -418,7 +488,10 @@ export default function App() {
     // Add a placeholder entry, then trigger the upload for that new slot
     const nextIdx = prompts.length;
     setPrompts(currentPrompts => {
-      const next = [...currentPrompts, { text: '', weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++ }];
+      const next = [
+        ...currentPrompts,
+        {text: '', weight: 1.0, isAudio: false, colorIndex: nextColorIndex.current++},
+      ];
       postNormalizedPrompts(next);
       return next;
     });
@@ -428,41 +501,50 @@ export default function App() {
 
   const togglePlay = () => {
     console.log('togglePlay clicked, posting message');
-    postMessage({ type: 'togglePlay' });
+    postMessage({type: 'togglePlay'});
   };
 
   // ── Native bridge: receive state from host ──
   useEffect(() => {
     window.updateState = (state: any) => {
       if (state.params) {
-        setParams(p => ({ ...p, ...state.params }));
+        setParams(p => ({...p, ...state.params}));
       }
       // DAW automation changed a weight knob — switch to list mode and
       // update the prompt sliders with the raw automation values.
       if (state.weightAutomation) {
         setMixMode('list');
         const wa = state.weightAutomation;
-        setPrompts(prev => prev.map((p, i) => {
-          const wKey = `weight_${i}`;
-          return wKey in wa ? { ...p, weight: wa[wKey] } : p;
-        }));
+        setPrompts(prev =>
+          prev.map((p, i) => {
+            const wKey = `weight_${i}`;
+            return wKey in wa ? {...p, weight: wa[wKey]} : p;
+          }),
+        );
       }
       if (state.metrics) {
-        setMetrics(m => ({ ...m, ...state.metrics }));
+        setMetrics(m => ({...m, ...state.metrics}));
         if (state.metrics.textEncoderStatusColors) {
           const colors: number[] = state.metrics.textEncoderStatusColors;
           setLocalLoadingIndices(prev => {
             let changed = false;
             const next = new Set(prev);
             colors.forEach((status, idx) => {
-              if (status !== 1 && next.has(idx)) { next.delete(idx); changed = true; }
+              if (status !== 1 && next.has(idx)) {
+                next.delete(idx);
+                changed = true;
+              }
             });
             return changed ? next : prev;
           });
         }
       }
       if (state.audioLevels) {
-        setMetrics(m => ({ ...m, leftLevel: state.audioLevels.left, rightLevel: state.audioLevels.right }));
+        setMetrics(m => ({
+          ...m,
+          leftLevel: state.audioLevels.left,
+          rightLevel: state.audioLevels.right,
+        }));
       }
       if (state.modelName !== undefined) setModelName(state.modelName);
       if (state.isPlaying !== undefined) setIsPlaying(state.isPlaying);
@@ -484,13 +566,19 @@ export default function App() {
 
       if (state.bankStatus !== undefined) setBankStatus(state.bankStatus);
       if (state.midiSources !== undefined) setMidiSources(state.midiSources);
-      if (state.computerKeyboardMidi !== undefined) setKeyboardMidiEnabled(!!state.computerKeyboardMidi);
+      if (state.computerKeyboardMidi !== undefined)
+        setKeyboardMidiEnabled(!!state.computerKeyboardMidi);
       if (state.activeNotes !== undefined) setActiveNotes(state.activeNotes);
       if (state.audioPrefillStatus === 'Success') setCustomPrefillLoaded(true);
       if (state.textPrompts !== undefined) {
         // Filter to only active entries (non-empty text) — dynamic length array
         const active = state.textPrompts
-          .map((p: any) => ({ text: p.text || '', weight: p.weight || 0, isAudio: p.isAudio || false, colorIndex: nextColorIndex.current++ }))
+          .map((p: any) => ({
+            text: p.text || '',
+            weight: p.weight || 0,
+            isAudio: p.isAudio || false,
+            colorIndex: nextColorIndex.current++,
+          }))
           .filter((p: any) => p.text.length > 0);
         setPrompts(active);
       }
@@ -529,18 +617,18 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
 
     // Notify backend that React is ready to receive state
-    postMessage({ type: 'uiReady' });
-    postMessage({ type: 'listRemoteModels' });
-    postMessage({ type: 'checkBanks' });
+    postMessage({type: 'uiReady'});
+    postMessage({type: 'listRemoteModels'});
+    postMessage({type: 'checkBanks'});
 
     return () => {
       // @ts-ignore
       delete window.updateState;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  // The native bridge is registered exactly once. It deliberately captures the
-  // initial prompt defaults for the one-time synchronization guarded above.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // The native bridge is registered exactly once. It deliberately captures the
+    // initial prompt defaults for the one-time synchronization guarded above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -550,7 +638,7 @@ export default function App() {
       value: {
         surfacePositions,
         cursorPos,
-      }
+      },
     });
   }, [surfacePositions, cursorPos]);
 
@@ -575,15 +663,19 @@ export default function App() {
   useEffect(() => {
     if (!keyboardMidiEnabled) {
       // Release any still-held notes
-      pressedKeys.current.forEach((note) => {
-        postMessage({ type: 'kbdNote', note, on: false });
+      pressedKeys.current.forEach(note => {
+        postMessage({type: 'kbdNote', note, on: false});
       });
       pressedKeys.current.clear();
       return;
     }
 
     const handleDown = (e: KeyboardEvent) => {
-      if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
+      if (
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement
+      )
+        return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === 'z') {
@@ -606,7 +698,7 @@ export default function App() {
       const note = keyboardBaseNote.current + semi;
       if (note < 0 || note > 127) return;
       pressedKeys.current.set(key, note);
-      postMessage({ type: 'kbdNote', note, on: true });
+      postMessage({type: 'kbdNote', note, on: true});
     };
 
     const handleUp = (e: KeyboardEvent) => {
@@ -614,13 +706,13 @@ export default function App() {
       const note = pressedKeys.current.get(key);
       if (note === undefined) return;
       pressedKeys.current.delete(key);
-      postMessage({ type: 'kbdNote', note, on: false });
+      postMessage({type: 'kbdNote', note, on: false});
     };
 
     // Release held notes when window loses focus (otherwise stuck notes).
     const handleBlur = () => {
-      pressedKeys.current.forEach((note) => {
-        postMessage({ type: 'kbdNote', note, on: false });
+      pressedKeys.current.forEach(note => {
+        postMessage({type: 'kbdNote', note, on: false});
       });
       pressedKeys.current.clear();
     };
@@ -637,86 +729,103 @@ export default function App() {
   }, [keyboardMidiEnabled, handleOctaveDown, handleOctaveUp]);
 
   const isDawPlaying = metrics.transportFlags >= 0 && (metrics.transportFlags & 2) !== 0;
-  const activePreset = MAGENTA_PRESETS.find((preset) => preset.id === activePresetId);
+  const activePreset = MAGENTA_PRESETS.find(preset => preset.id === activePresetId);
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      width: '100%',
-      color: 'var(--color-fg)',
-      overflow: 'hidden',
-      position: 'relative',
-      backgroundColor: 'var(--color-bg)',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        color: 'var(--color-fg)',
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundColor: 'var(--color-bg)',
+      }}
+    >
       {/* Fade overlay to transition from blank white page on first load */}
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        backgroundColor: '#1a1a1d',
-        zIndex: 99999,
-        opacity: isInitialized ? 0 : 1,
-        pointerEvents: isInitialized ? 'none' : 'auto',
-        transition: 'opacity 0.2s ease-in-out',
-      }} />
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#1a1a1d',
+          zIndex: 99999,
+          opacity: isInitialized ? 0 : 1,
+          pointerEvents: isInitialized ? 'none' : 'auto',
+          transition: 'opacity 0.2s ease-in-out',
+        }}
+      />
       {/* Tiny ghost bug button in absolute top-right corner of the window */}
       <Tooltip title={`Build: ${__COMMIT_HASH__}`} placement="bottom-end" arrow={false}>
-        <div style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          opacity: 0.1,
-          cursor: 'help',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-        }}
+        <div
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            opacity: 0.1,
+            cursor: 'help',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: '13px', color: '#FFF' }}>bug_report</span>
+          <span className="material-symbols-outlined" style={{fontSize: '13px', color: '#FFF'}}>
+            bug_report
+          </span>
         </div>
       </Tooltip>
 
       {/* ── Top section: Zone A (left) + Zone B (right) ── */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'row',
-        overflow: 'hidden',
-        minHeight: 0,
-      }}>
-
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'row',
+          overflow: 'hidden',
+          minHeight: 0,
+        }}
+      >
         {/* ══════════════════════════════════════════════════════
             ZONE A — Left column
             ══════════════════════════════════════════════════════ */}
-        <div style={{
-          width: '455px',
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-
-          {/* ── A: Header row — View Mode Switcher + Presets + ModelSelector ── */}
-          <div style={{
-            display: 'flex',
-            padding: '9px 16px',
-            alignItems: 'center',
-            gap: '10px',
+        <div
+          style={{
+            width: '455px',
             flexShrink: 0,
-          }}>
-            {/* View Mode Switcher */}
-            <div style={{
-              display: 'flex',
-              background: '#202124',
-              borderRadius: '6px',
-              padding: '3px',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {/* ── A: Header — mode, model, and full-width preset selector ── */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              gridTemplateAreas: '"mode model" "preset preset"',
+              padding: '9px 16px',
+              alignItems: 'center',
+              columnGap: '10px',
+              rowGap: '6px',
               flexShrink: 0,
-            }}>
+            }}
+          >
+            {/* View Mode Switcher */}
+            <div
+              style={{
+                gridArea: 'mode',
+                display: 'flex',
+                background: '#202124',
+                borderRadius: '6px',
+                padding: '3px',
+                flexShrink: 0,
+              }}
+            >
               <button
                 onClick={() => {
                   if (mixMode === 'surface') {
@@ -726,7 +835,7 @@ export default function App() {
                       setPrompts(prev => {
                         const next = [...prev];
                         activeNodes.forEach((node, i) => {
-                          next[node.id] = { ...next[node.id], weight: weights[i] };
+                          next[node.id] = {...next[node.id], weight: weights[i]};
                         });
                         postNormalizedPrompts(next);
                         return next;
@@ -761,7 +870,7 @@ export default function App() {
                     // Compute IDW weights from current surface positions and push to native
                     const weights = calculateWeights(listenerNode, activeNodes);
                     setPrompts(prev => {
-                      const next = prev.map((p, i) => ({ ...p, weight: weights[i] ?? 0 }));
+                      const next = prev.map((p, i) => ({...p, weight: weights[i] ?? 0}));
                       postNormalizedPrompts(next);
                       return next;
                     });
@@ -787,77 +896,93 @@ export default function App() {
               </button>
             </div>
 
-            <MagentaDropdown
-              id="preset-selector-button"
-              label={activePreset ? `${activePreset.group}: ${activePreset.name}` : 'Presets'}
-              buttonSx={{
-                maxWidth: '176px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: '#FFF',
-                fontSize: '12px',
-                fontWeight: 600,
-              }}
-              menuSx={{
-                '& .MuiPaper-root': {
-                  maxHeight: '360px',
-                  minWidth: '310px',
-                },
-              }}
-            >
-              {(['Jam', 'Solo'] as const).map((group) => [
-                <ListSubheader
-                  key={`${group}-header`}
-                  disableSticky
-                  sx={{ background: '#2e2e2e', color: 'var(--color-muted)', fontSize: '11px', lineHeight: '28px' }}
-                >
-                  {group}
-                </ListSubheader>,
-                ...MAGENTA_PRESETS.map((preset, index) => preset.group === group && (
-                  <MenuItem
-                    key={preset.id}
-                    selected={preset.id === activePresetId}
-                    onClick={() => postMessage({ type: 'selectFactoryPreset', index })}
-                    sx={{ fontSize: '12px' }}
+            <div style={{gridArea: 'preset', minWidth: 0}}>
+              <MagentaDropdown
+                id="preset-selector-button"
+                label={activePreset ? `${activePreset.group}: ${activePreset.name}` : 'Presets'}
+                fullWidth
+                buttonSx={{
+                  width: '100%',
+                  justifyContent: 'space-between',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: '#FFF',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                }}
+                menuSx={{
+                  maxHeight: 'min(360px, calc(100vh - 104px))',
+                  minWidth: 'min(310px, calc(100vw - 32px))',
+                  maxWidth: 'calc(100vw - 32px)',
+                }}
+              >
+                {(['Jam', 'Solo'] as const).map(group => [
+                  <ListSubheader
+                    key={`${group}-header`}
+                    disableSticky
+                    sx={{
+                      background: '#2e2e2e',
+                      color: 'var(--color-muted)',
+                      fontSize: '11px',
+                      lineHeight: '28px',
+                    }}
                   >
-                    {preset.name}
-                  </MenuItem>
-                )).filter(Boolean),
-              ])}
-            </MagentaDropdown>
+                    {group}
+                  </ListSubheader>,
+                  ...MAGENTA_PRESETS.map(
+                    (preset, index) =>
+                      preset.group === group && (
+                        <MenuItem
+                          key={preset.id}
+                          selected={preset.id === activePresetId}
+                          onClick={() => postMessage({type: 'selectFactoryPreset', index})}
+                          sx={{fontSize: '12px'}}
+                        >
+                          {preset.name}
+                        </MenuItem>
+                      ),
+                  ).filter(Boolean),
+                ])}
+              </MagentaDropdown>
+            </div>
 
             {/* ModelSelector */}
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+            <div
+              style={{gridArea: 'model', minWidth: 0, display: 'flex', justifyContent: 'flex-end'}}
+            >
               <ModelSelector
                 modelName={modelName}
                 localModels={localModels}
                 remoteModels={remoteModels}
                 downloadProgress={downloadProgress}
 
-                onSelectModel={(m) => postMessage({ type: 'selectModel', name: m })}
-                onDownloadModel={(m) => postMessage({ type: 'downloadModel', name: m })}
-                onDeleteModel={(m) => postMessage({ type: 'deleteModel', name: m })}
-                onSelectFolder={() => postMessage({ type: 'selectDownloadFolder' })}
+                onSelectModel={m => postMessage({type: 'selectModel', name: m})}
+                onDownloadModel={m => postMessage({type: 'downloadModel', name: m})}
+                onDeleteModel={m => postMessage({type: 'deleteModel', name: m})}
+                onSelectFolder={() => postMessage({type: 'selectDownloadFolder'})}
               />
             </div>
           </div>
 
           {/* ── A: PromptSurface / PromptList area ── */}
-          <div style={{
-            flex: 1,
-            position: 'relative',
-            overflow: 'hidden',
-            minHeight: 0,
-          }}>
-            <div style={{
-              height: '100%',
-              overflow: mixMode === 'list' ? 'auto' : 'hidden',
+          <div
+            style={{
+              flex: 1,
               position: 'relative',
+              overflow: 'hidden',
+              minHeight: 0,
             }}
-            className={mixMode === 'list' ? 'thin-scrollbar' : ''}
+          >
+            <div
+              style={{
+                height: '100%',
+                overflow: mixMode === 'list' ? 'auto' : 'hidden',
+                position: 'relative',
+              }}
+              className={mixMode === 'list' ? 'thin-scrollbar' : ''}
             >
-              <div style={{ height: mixMode === 'surface' ? '100%' : 'auto' }}>
+              <div style={{height: mixMode === 'surface' ? '100%' : 'auto'}}>
                 {/* ── PromptSurface (always mounted, toggle visibility) ── */}
                 <div
                   ref={promptSurfaceRef}
@@ -893,13 +1018,15 @@ export default function App() {
                 </div>
 
                 {/* ── Prompt list (always mounted, toggle visibility) ── */}
-                <div style={{
-                  padding: '16px 16px',
-                  flexShrink: 0,
-                  display: mixMode === 'surface' ? 'none' : 'flex',
-                  flexDirection: 'column',
-                  gap: '10px',
-                }}>
+                <div
+                  style={{
+                    padding: '16px 16px',
+                    flexShrink: 0,
+                    display: mixMode === 'surface' ? 'none' : 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
                   {prompts.map((p, idx) => (
                     <PromptRow
                       key={idx}
@@ -909,8 +1036,8 @@ export default function App() {
                       isEmpty={!p.text && !p.isAudio}
                       isAudio={p.isAudio}
                       loading={activeNodes[idx]?.loading}
-                      onTextChange={(newText) => handlePromptTextChange(idx, newText)}
-                      onWeightChange={(newWeight) => handlePromptWeightChange(idx, newWeight)}
+                      onTextChange={newText => handlePromptTextChange(idx, newText)}
+                      onWeightChange={newWeight => handlePromptWeightChange(idx, newWeight)}
                       onRemove={() => handlePromptRemove(idx)}
                       onUpload={() => handlePromptUpload(idx)}
                       onClearAudio={() => handleClearAudio(idx)}
@@ -922,14 +1049,20 @@ export default function App() {
           </div>
 
           {/* ── A: Prompt Strength slider ── */}
-          <div style={{
-            padding: '10px 16px 0',
-            flexShrink: 0,
-          }}>
+          <div
+            style={{
+              padding: '10px 16px 0',
+              flexShrink: 0,
+            }}
+          >
             <MagentaSlider
               label="Prompt Strength"
               tooltip="Controls how strongly the model follows your style prompts. Higher values stick closely to the prompt but may reduce audio quality, while lower values prioritize musicality over strict accuracy."
-              value={params.cfgmusiccoca} min={0} max={5} step={0.1} onChange={(v) => sendParamChange(3, v)}
+              value={params.cfgmusiccoca}
+              min={0}
+              max={5}
+              step={0.1}
+              onChange={v => sendParamChange(3, v)}
             />
           </div>
 
@@ -937,15 +1070,17 @@ export default function App() {
           {(() => {
             const atMax = prompts.length >= MAX_PROMPTS;
             return (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 16px',
-                flexShrink: 0,
-                opacity: atMax ? 0.45 : 1,
-                pointerEvents: atMax ? 'none' : 'auto',
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 16px',
+                  flexShrink: 0,
+                  opacity: atMax ? 0.45 : 1,
+                  pointerEvents: atMax ? 'none' : 'auto',
+                }}
+              >
                 {/* Input bar container */}
                 <div
                   className="prompt-box"
@@ -958,11 +1093,13 @@ export default function App() {
                 >
                   <input
                     type="text"
-                    placeholder={atMax ? `${MAX_PROMPTS} prompts maximum` : 'Type a prompt or upload a sample'}
+                    placeholder={
+                      atMax ? `${MAX_PROMPTS} prompts maximum` : 'Type a prompt or upload a sample'
+                    }
                     value={atMax ? '' : newPromptText}
                     disabled={atMax}
-                    onChange={(e) => setNewPromptText(e.target.value)}
-                    onKeyDown={(e) => {
+                    onChange={e => setNewPromptText(e.target.value)}
+                    onKeyDown={e => {
                       if (e.key === 'Enter' && newPromptText.trim()) {
                         handleAddPromptWithText(newPromptText.trim());
                       }
@@ -999,7 +1136,9 @@ export default function App() {
                         transition: 'all 0.2s ease-in-out',
                       }}
                     >
-                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>casino</span>
+                      <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                        casino
+                      </span>
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Upload audio prompt" arrow placement="top">
@@ -1020,7 +1159,9 @@ export default function App() {
                         transition: 'all 0.2s ease-in-out',
                       }}
                     >
-                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>upload</span>
+                      <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                        upload
+                      </span>
                     </IconButton>
                   </Tooltip>
                 </div>
@@ -1042,7 +1183,9 @@ export default function App() {
                   }}
                   title="Add prompt"
                 >
-                  <span className="material-icons" style={{ fontSize: '18px' }}>add</span>
+                  <span className="material-icons" style={{fontSize: '18px'}}>
+                    add
+                  </span>
                 </IconButton>
               </div>
             );
@@ -1052,25 +1195,29 @@ export default function App() {
         {/* ══════════════════════════════════════════════════════
             ZONE B — Right column
             ══════════════════════════════════════════════════════ */}
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          minWidth: 0,
-          padding: '20px',
-          gap: '28px',
-        }}>
-
-          {/* ── B: Global Controls ── */}
-          <div className="section-box" style={{
+        <div
+          style={{
+            flex: 1,
             display: 'flex',
-            alignItems: 'center',
-            padding: '20px 16px',
-            gap: '16px',
-            flexShrink: 0,
-            position: 'relative',
-          }}>
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minWidth: 0,
+            padding: '20px',
+            gap: '28px',
+          }}
+        >
+          {/* ── B: Global Controls ── */}
+          <div
+            className="section-box"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '20px 16px',
+              gap: '16px',
+              flexShrink: 0,
+              position: 'relative',
+            }}
+          >
             {/* Reset button — top right */}
             <IconButton
               onClick={() => resetToDefaults([0, 1, 39, 9])}
@@ -1083,32 +1230,42 @@ export default function App() {
                 opacity: 0.35,
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#FFF' }}>refresh</span>
+              <span className="material-symbols-outlined" style={{fontSize: '16px', color: '#FFF'}}>
+                refresh
+              </span>
             </IconButton>
             <Knob
               label="Temperature"
               tooltip="Scales the unpredictability of the generated music. Lower values keep the output focused and conservative, while higher values make it more adventurous"
-              value={params.temperature} min={0} max={3} step={0.01} onChange={(v) => sendParamChange(0, v)}
+              value={params.temperature}
+              min={0}
+              max={3}
+              step={0.01}
+              onChange={v => sendParamChange(0, v)}
               size={70}
             />
             <Knob
               label="Top-K Sampling"
               tooltip="Restricts the model to choosing from the 'K' most likely next audio tokens. Lower numbers keep the music safe and predictable; higher numbers allow for more unexpected, diverse choices."
-              value={params.topk} min={1} max={1024} step={1} onChange={(v) => sendParamChange(1, v)}
+              value={params.topk}
+              min={1}
+              max={1024}
+              step={1}
+              onChange={v => sendParamChange(1, v)}
               size={70}
             />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginLeft: '8px' }}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '14px', marginLeft: '8px'}}>
               <MagentaToggle
                 label="No Drums"
                 checked={params.drumless}
-                onChange={(v) => sendParamChange(39, v ? 1 : 0)}
+                onChange={v => sendParamChange(39, v ? 1 : 0)}
                 tooltip="Encourages the model to not play drums."
               />
               {isAUv3 && (
                 <MagentaToggle
                   label="Delay Comp"
                   checked={params.latencycomp}
-                  onChange={(v) => sendParamChange(9, v ? 1 : 0)}
+                  onChange={v => sendParamChange(9, v ? 1 : 0)}
                   tooltip="Reports the plugin's internal buffering latency to your DAW. When enabled, your host DAW will automatically shift all other project tracks to keep the AI's generation in perfect sync with the grid."
                 />
               )}
@@ -1116,35 +1273,43 @@ export default function App() {
           </div>
 
           {/* ── B: Note Controls + Memory Banks ── */}
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            gap: '18px',
-            minHeight: 0,
-          }}>
-
-            {/* ── B: Note Controls ── */}
-            <div className="section-box" style={{
-              width: '200px',
-              flexShrink: 0,
+          <div
+            style={{
+              flex: 1,
               display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'stretch',
-              padding: '24px 16px',
-              justifyContent: 'space-between',
-              position: 'relative',
-            }}>
-              {/* Header — fieldset-legend style, out of flow */}
-              <div style={{
-                position: 'absolute',
-                top: '-8px',
-                left: '14px',
+              gap: '18px',
+              minHeight: 0,
+            }}
+          >
+            {/* ── B: Note Controls ── */}
+            <div
+              className="section-box"
+              style={{
+                width: '200px',
+                flexShrink: 0,
                 display: 'flex',
-                alignItems: 'center',
-                background: 'var(--color-bg)',
-                padding: '0 6px',
-              }}>
-              <span className="section-header" style={{ margin: 0, fontSize: '11px' }}>Note Controls</span>
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                padding: '24px 16px',
+                justifyContent: 'space-between',
+                position: 'relative',
+              }}
+            >
+              {/* Header — fieldset-legend style, out of flow */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  left: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'var(--color-bg)',
+                  padding: '0 6px',
+                }}
+              >
+                <span className="section-header" style={{margin: 0, fontSize: '11px'}}>
+                  Note Controls
+                </span>
               </div>
               {/* Reset button — top right */}
               <IconButton
@@ -1158,72 +1323,96 @@ export default function App() {
                   opacity: 0.35,
                 }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#FFF' }}>refresh</span>
+                <span
+                  className="material-symbols-outlined"
+                  style={{fontSize: '16px', color: '#FFF'}}
+                >
+                  refresh
+                </span>
               </IconButton>
               <MagentaSlider
                 label="Note Strength"
                 tooltip="Controls how strongly the model adheres to your input notes. Higher values force strict compliance, while lower values allow the model more creative drift."
-                value={params.cfgnotes} min={0} max={5} step={0.1} onChange={(v) => sendParamChange(4, v)}
+                value={params.cfgnotes}
+                min={0}
+                max={5}
+                step={0.1}
+                onChange={v => sendParamChange(4, v)}
                 stacked
               />
               <MagentaToggle
                 label="Solo"
                 checked={params.unmaskwidth === 127}
-                onChange={(v) => sendParamChange(7, v ? 127 : 4)}
+                onChange={v => sendParamChange(7, v ? 127 : 4)}
                 tooltip="Encourages the model to only play the input notes, and not add accompaniment."
               />
               <MagentaToggle
                 label="MIDI Gate"
                 checked={params.midigate}
-                onChange={(v) => sendParamChange(45, v ? 1 : 0)}
+                onChange={v => sendParamChange(45, v ? 1 : 0)}
                 tooltip="Gates the output so the model only makes sound when keys are pressed. When enabled, the plugin will mute when you release all notes."
               />
               <MagentaToggle
                 label="Auto-Strum"
                 checked={!params.onsetmode}
-                onChange={(v) => sendParamChange(46, v ? 0 : 1)}
+                onChange={v => sendParamChange(46, v ? 0 : 1)}
                 tooltip="Allows the model to continuously retrigger (e.g. strum, bow, or arpeggiate) when notes are held."
               />
             </div>
 
             {/* ── B: Memory Banks ── */}
-            <div className="section-box" style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              padding: '24px 16px',
-              minWidth: 0,
-              position: 'relative',
-            }}>
-              {/* Header — fieldset-legend style, out of flow */}
-              <div style={{
-                position: 'absolute',
-                top: '-8px',
-                left: '12px',
+            <div
+              className="section-box"
+              style={{
+                flex: 1,
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: 'var(--color-bg)',
-                padding: '0 6px',
-              }}>
-                <span className="section-header" style={{ margin: 0, fontSize: '11px' }}>Memory Banks</span>
-                <Tooltip title="Snapshots to save and restore the model's audio context (up to the last 20s of music). You can save the current context and restore it at will." arrow placement="top">
-                  <InfoOutlined style={{ fontSize: '13px', opacity: 0.3, cursor: 'help', color: '#FFF' }} />
+                flexDirection: 'column',
+                padding: '24px 16px',
+                minWidth: 0,
+                position: 'relative',
+              }}
+            >
+              {/* Header — fieldset-legend style, out of flow */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  left: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'var(--color-bg)',
+                  padding: '0 6px',
+                }}
+              >
+                <span className="section-header" style={{margin: 0, fontSize: '11px'}}>
+                  Memory Banks
+                </span>
+                <Tooltip
+                  title="Snapshots to save and restore the model's audio context (up to the last 20s of music). You can save the current context and restore it at will."
+                  arrow
+                  placement="top"
+                >
+                  <InfoOutlined
+                    style={{fontSize: '13px', opacity: 0.3, cursor: 'help', color: '#FFF'}}
+                  />
                 </Tooltip>
               </div>
 
               {/* Banks grid */}
-              <div style={{ display: 'flex', gap: '8px', flex: 1, minHeight: 0 }}>
+              <div style={{display: 'flex', gap: '8px', flex: 1, minHeight: 0}}>
                 {/* Column 1: User Banks */}
                 <div className="bank-column">
-                  {[0, 1, 2].map((i) => {
+                  {[0, 1, 2].map(i => {
                     const filled = bankStatus[i];
                     return (
                       <div
                         key={i}
                         className={`bank-cell-wrapper${remotePressedBank === `bank${i}` ? ' bank-pressed' : ''}`}
                       >
-                        <div className={`bank-cell${lastRestoredBank === `bank${i}` ? ' active' : ''}`}>
+                        <div
+                          className={`bank-cell${lastRestoredBank === `bank${i}` ? ' active' : ''}`}
+                        >
                           {/* Left/Center: Label */}
                           <div className="bank-cell-label">
                             <span className={`bank-cell-dot${filled ? ' filled' : ''}`} />
@@ -1233,17 +1422,33 @@ export default function App() {
                           {/* Right: Actions */}
                           <div className="bank-cell-actions">
                             <IconButton
-                              onClick={() => { postMessage({ type: 'saveBank', index: i }); setLastRestoredBank(`bank${i}`); }}
+                              onClick={() => {
+                                postMessage({type: 'saveBank', index: i});
+                                setLastRestoredBank(`bank${i}`);
+                              }}
                               variant="ghost"
                             >
-                              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
+                              <span
+                                className="material-symbols-outlined"
+                                style={{fontSize: '18px'}}
+                              >
+                                save
+                              </span>
                             </IconButton>
                             <IconButton
-                              onClick={() => { postMessage({ type: 'loadBank', index: i }); setLastRestoredBank(`bank${i}`); }}
+                              onClick={() => {
+                                postMessage({type: 'loadBank', index: i});
+                                setLastRestoredBank(`bank${i}`);
+                              }}
                               disabled={!filled}
                               variant="ghost"
                             >
-                              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>replay</span>
+                              <span
+                                className="material-symbols-outlined"
+                                style={{fontSize: '18px'}}
+                              >
+                                replay
+                              </span>
                             </IconButton>
                           </div>
                         </div>
@@ -1260,7 +1465,11 @@ export default function App() {
                   >
                     <div className={`bank-cell${lastRestoredBank === 'factory' ? ' active' : ''}`}>
                       <div className="bank-cell-label">
-                        <Tooltip title="Reset audio context to the model's initial state" arrow placement="top">
+                        <Tooltip
+                          title="Reset audio context to the model's initial state"
+                          arrow
+                          placement="top"
+                        >
                           <InfoOutlined className="bank-info-icon" />
                         </Tooltip>
                         Empty
@@ -1268,10 +1477,15 @@ export default function App() {
 
                       <div className="bank-cell-actions">
                         <IconButton
-                          onClick={() => { postMessage({ type: 'resetToFactory' }); setLastRestoredBank('factory'); }}
+                          onClick={() => {
+                            postMessage({type: 'resetToFactory'});
+                            setLastRestoredBank('factory');
+                          }}
                           variant="ghost"
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>replay</span>
+                          <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                            replay
+                          </span>
                         </IconButton>
                       </div>
                     </div>
@@ -1283,26 +1497,40 @@ export default function App() {
                   >
                     <div className={`bank-cell${lastRestoredBank === 'custom' ? ' active' : ''}`}>
                       <div className="bank-cell-label">
-                        <Tooltip title="Fill the model's audio context with an audio file" arrow placement="top">
+                        <Tooltip
+                          title="Fill the model's audio context with an audio file"
+                          arrow
+                          placement="top"
+                        >
                           <InfoOutlined className="bank-info-icon" />
                         </Tooltip>
                         Custom
-                        <span className={`bank-cell-dot${customPrefillLoaded ? ' filled' : ''}`} style={{ marginLeft: '8px', marginRight: 0 }} />
+                        <span
+                          className={`bank-cell-dot${customPrefillLoaded ? ' filled' : ''}`}
+                          style={{marginLeft: '8px', marginRight: 0}}
+                        />
                       </div>
 
                       <div className="bank-cell-actions">
                         <IconButton
-                          onClick={() => postMessage({ type: 'audioPrefill' })}
+                          onClick={() => postMessage({type: 'audioPrefill'})}
                           variant="ghost"
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>upload_file</span>
+                          <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                            upload_file
+                          </span>
                         </IconButton>
                         <IconButton
-                          onClick={() => { postMessage({ type: 'audioPrefill' }); setLastRestoredBank('custom'); }}
+                          onClick={() => {
+                            postMessage({type: 'audioPrefill'});
+                            setLastRestoredBank('custom');
+                          }}
                           disabled={!customPrefillLoaded}
                           variant="ghost"
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>replay</span>
+                          <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                            replay
+                          </span>
                         </IconButton>
                       </div>
                     </div>
@@ -1311,11 +1539,15 @@ export default function App() {
                   {/* Silence row */}
                   <div
                     className={`bank-cell-wrapper${remotePressedBank === 'silence' ? ' bank-pressed' : ''}`}
-                    style={{ visibility: 'hidden' }}
+                    style={{visibility: 'hidden'}}
                   >
                     <div className={`bank-cell${lastRestoredBank === 'silence' ? ' active' : ''}`}>
                       <div className="bank-cell-label">
-                        <Tooltip title="Fill the model's audio context with silence" arrow placement="top">
+                        <Tooltip
+                          title="Fill the model's audio context with silence"
+                          arrow
+                          placement="top"
+                        >
                           <InfoOutlined className="bank-info-icon" />
                         </Tooltip>
                         Silence
@@ -1323,10 +1555,15 @@ export default function App() {
 
                       <div className="bank-cell-actions">
                         <IconButton
-                          onClick={() => { postMessage({ type: 'silentPrefill' }); setLastRestoredBank('silence'); }}
+                          onClick={() => {
+                            postMessage({type: 'silentPrefill'});
+                            setLastRestoredBank('silence');
+                          }}
                           variant="ghost"
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>replay</span>
+                          <span className="material-symbols-outlined" style={{fontSize: '18px'}}>
+                            replay
+                          </span>
                         </IconButton>
                       </div>
                     </div>
@@ -1341,29 +1578,33 @@ export default function App() {
       {/* ══════════════════════════════════════════════════════
           ZONE C — Bottom bar (full width)
           ══════════════════════════════════════════════════════ */}
-      <div style={{
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'stretch',
-        height: '90px',
-        boxSizing: 'border-box',
-        padding: '8px 16px',
-        background: '#202124',
-        gap: '16px',
-      }}>
-        {/* Left: Transport Controls */}
-        <div style={{
+      <div
+        style={{
+          flexShrink: 0,
           display: 'flex',
-          alignItems: 'center',
-          flex: 1,
-          justifyContent: 'flex-start',
-          minWidth: 0,
-        }}>
+          alignItems: 'stretch',
+          height: '90px',
+          boxSizing: 'border-box',
+          padding: '8px 16px',
+          background: '#202124',
+          gap: '16px',
+        }}
+      >
+        {/* Left: Transport Controls */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flex: 1,
+            justifyContent: 'flex-start',
+            minWidth: 0,
+          }}
+        >
           <TransportControls
             isPlaying={isPlaying}
             onTogglePlay={togglePlay}
             volume={params.volume}
-            onVolumeChange={(v) => sendParamChange(5, v)}
+            onVolumeChange={v => sendParamChange(5, v)}
             onReset={onResetModel}
             onResetDown={() => setRemotePressedBank(lastRestoredBank)}
             onResetUp={() => setRemotePressedBank(null)}
@@ -1377,26 +1618,30 @@ export default function App() {
         </div>
 
         {/* Center: MIDI (top) + Keyboard (bottom) */}
-        <div style={{
-          width: '682px',
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'flex-start',
-        }}>
-          {/* Top row: MIDI selector (left) + octave rocker (center) */}
-          <div style={{
+        <div
+          style={{
+            width: '682px',
             flexShrink: 0,
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'relative',
-          }}>
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+          }}
+        >
+          {/* Top row: MIDI selector (left) + octave rocker (center) */}
+          <div
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              position: 'relative',
+            }}
+          >
             {!isAUv3 && (
               <MidiSelector
                 midiSources={midiSources}
                 keyboardMidiEnabled={keyboardMidiEnabled}
-                onSelectSource={(endpoint) => postMessage({ type: 'selectMidiSource', endpoint })}
+                onSelectSource={endpoint => postMessage({type: 'selectMidiSource', endpoint})}
                 showComputerKeyboard={true}
                 midiActive={activeNotes.length > 0}
                 maxDropdownWidth="280px"
@@ -1404,55 +1649,63 @@ export default function App() {
             )}
             {/* Octave rocker — QWERTY mode only, absolutely centered */}
             {keyboardMidiEnabled && (
-              <div style={{
-                position: 'absolute',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}
+              >
                 <IconButton
                   variant="ghost"
                   onClick={handleOctaveDown}
                   disabled={octaveOffset <= -2}
-                  sx={{ width: 24, height: 24 }}
+                  sx={{width: 24, height: 24}}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>chevron_left</span>
+                  <span className="material-symbols-outlined" style={{fontSize: '16px'}}>
+                    chevron_left
+                  </span>
                 </IconButton>
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  minWidth: '24px',
-                  textAlign: 'center',
-                  fontFamily: "'Google Sans', system-ui, sans-serif",
-                  letterSpacing: '0.5px',
-                  opacity: 0.7,
-                }}>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    minWidth: '24px',
+                    textAlign: 'center',
+                    fontFamily: "'Google Sans', system-ui, sans-serif",
+                    letterSpacing: '0.5px',
+                    opacity: 0.7,
+                  }}
+                >
                   C{Math.floor((KEYBOARD_MIDI_BASE_DEFAULT + octaveOffset * 12) / 12) - 1}
                 </span>
                 <IconButton
                   variant="ghost"
                   onClick={handleOctaveUp}
                   disabled={octaveOffset >= 4}
-                  sx={{ width: 24, height: 24 }}
+                  sx={{width: 24, height: 24}}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>chevron_right</span>
+                  <span className="material-symbols-outlined" style={{fontSize: '16px'}}>
+                    chevron_right
+                  </span>
                 </IconButton>
               </div>
             )}
-            <div style={{ flexShrink: 0 }} />
+            <div style={{flexShrink: 0}} />
           </div>
           {/* Keyboard */}
-          <div style={{ flex: 1, marginTop: '6px' }}>
+          <div style={{flex: 1, marginTop: '6px'}}>
             <PianoKeyboard
               activeNotes={activeNotes}
               accentColor="#71fade"
               startNote={24}
               endNote={96}
               keyboardMidiEnabled={keyboardMidiEnabled}
-              onNoteOn={(note) => postMessage({ type: 'kbdNote', note, on: true })}
-              onNoteOff={(note) => postMessage({ type: 'kbdNote', note, on: false })}
+              onNoteOn={note => postMessage({type: 'kbdNote', note, on: true})}
+              onNoteOff={note => postMessage({type: 'kbdNote', note, on: false})}
               showOctaveLabels
               gap={2}
               blackKeyHeight="55%"
@@ -1463,22 +1716,24 @@ export default function App() {
         </div>
 
         {/* Right: Full-height container for Timing Indicator + Audio Meter */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-          flexShrink: 0,
-          height: '100%',
-          flex: 1,
-          justifyContent: 'flex-end',
-          minWidth: 0,
-        }}>
-          <div style={{ marginBottom: '-7px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            flexShrink: 0,
+            height: '100%',
+            flex: 1,
+            justifyContent: 'flex-end',
+            minWidth: 0,
+          }}
+        >
+          <div style={{marginBottom: '-7px'}}>
             <TimingIndicator
               frameMs={metrics.frameMs}
               droppedFrames={metrics.droppedFrames}
               buffersize={params.buffersize}
-              onBufferChange={(v) => sendParamChange(8, v)}
+              onBufferChange={v => sendParamChange(8, v)}
               isPlaying={isPlaying || isDawPlaying}
               bufferLabel="buffer"
               stacked={true}
@@ -1501,11 +1756,10 @@ export default function App() {
           downloadPath={downloadPath}
           isFetchingModels={isFetchingModels}
 
-          onSelectFolder={() => postMessage({ type: 'selectDownloadFolder' })}
-          onStartDownload={(modelName) => postMessage({ type: 'initResources', modelName })}
+          onSelectFolder={() => postMessage({type: 'selectDownloadFolder'})}
+          onStartDownload={modelName => postMessage({type: 'initResources', modelName})}
         />
       )}
-
     </div>
   );
 }

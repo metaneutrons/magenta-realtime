@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import React, { useState } from 'react';
+import React, {useState} from 'react';
 import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
-import { ChevronDown } from 'lucide-react';
+import {ChevronDown} from 'lucide-react';
 
 interface MagentaDropdownProps {
   /** Content displayed in the trigger button */
@@ -32,6 +32,8 @@ interface MagentaDropdownProps {
   buttonSx?: Record<string, any>;
   /** Extra sx merged onto the Menu's Paper */
   menuSx?: Record<string, any>;
+  /** Let the trigger fill the width of its parent container */
+  fullWidth?: boolean;
   /** MenuItem elements rendered inside the popup */
   children: React.ReactNode;
   /** Callback when the dropdown menu is opened or closed */
@@ -52,6 +54,7 @@ export function MagentaDropdown({
   endIcon,
   buttonSx = {},
   menuSx = {},
+  fullWidth = false,
   children,
   onOpenChange,
 }: MagentaDropdownProps) {
@@ -70,12 +73,16 @@ export function MagentaDropdown({
     onOpenChange?.(false);
   };
 
-  const defaultEndIcon = (
-    <ChevronDown style={{ width: '16px', height: '16px', opacity: 0.6 }} />
-  );
+  const defaultEndIcon = <ChevronDown style={{width: '16px', height: '16px', opacity: 0.6}} />;
 
   return (
-    <div style={{ display: 'inline-block', verticalAlign: 'baseline' }}>
+    <div
+      style={{
+        display: fullWidth ? 'block' : 'inline-block',
+        width: fullWidth ? '100%' : undefined,
+        verticalAlign: 'baseline',
+      }}
+    >
       <Button
         id={triggerId}
         aria-controls={open ? menuId : undefined}
@@ -151,7 +158,7 @@ export function MagentaDropdown({
       >
         {/* Inject handleClose into children via context-free approach:
             consumers call their own onClose or we wrap children */}
-        {React.Children.map(children, (child) => {
+        {React.Children.map(children, child => {
           if (!React.isValidElement(child)) return child;
           const existingOnClick = (child.props as any).onClick;
           return React.cloneElement(child as React.ReactElement<any>, {
