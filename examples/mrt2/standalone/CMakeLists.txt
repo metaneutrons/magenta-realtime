@@ -54,7 +54,7 @@ set_target_properties(mrt2_standalone PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.standalone"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.standalone"
 )
 
 add_dependencies(mrt2_standalone build_mrt2_ui)

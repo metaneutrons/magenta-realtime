@@ -59,7 +59,7 @@ set_target_properties(mrt2_au PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2_AU
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2_AU"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.au"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.au"
 )
 
 # ─── AUv3 Host App (.app) ─────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ set_target_properties(mrt2_au_app PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2_AUApp
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2 (AU)"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.au.host"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.au.host"
 )
 
 

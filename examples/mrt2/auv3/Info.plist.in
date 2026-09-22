@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.google.mrt2.au</string>
+    <string>com.metaneutrons.mrt2.au</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -40,9 +40,9 @@
                     <key>manufacturer</key>
                     <string>Goog</string>
                     <key>name</key>
-                    <string>Google: MRT2</string>
+                    <string>metaneutrons: MRT2</string>
                     <key>description</key>
-                    <string>Real-time music generation</string>
+                    <string>metaneutrons real-time music generation</string>
                     <key>factoryFunction</key>
                     <string>MagentaRTViewController</string>
                     <key>version</key>

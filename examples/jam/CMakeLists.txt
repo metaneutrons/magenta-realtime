@@ -53,7 +53,7 @@ set_target_properties(mrt2_jam PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2_Jam
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2 - Jam"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.jam"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.jam"
 )
 
 # ─── Jam React UI Build Target ─────────────────────────────────────────

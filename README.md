@@ -5,6 +5,9 @@
 > [!NOTE]
 > **Download notarized Apps and Plugins from the [GitHub Releases page](https://github.com/metaneutrons/magenta-realtime/releases).**
 
+> **Fork notice:** This metaneutrons distribution is an independent fork of
+> Magenta RealTime and is not affiliated with or endorsed by Google.
+
 Magenta RealTime 2 (MRT2) is a state-of-the-art open-weights model for real-time music generation. It contains several key components
 * An [open-weights model](https://huggingface.co/google/magenta-realtime-2)
 * Python source for inference with JAX and MLX backends (not published to PyPI)

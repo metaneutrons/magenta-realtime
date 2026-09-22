@@ -53,7 +53,7 @@ set_target_properties(mrt2_collider PROPERTIES
     MACOSX_BUNDLE_EXECUTABLE_NAME MRT2_Collider
     MACOSX_BUNDLE_BUNDLE_NAME "MRT2 - Collider"
     MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.google.mrt2.collider"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.metaneutrons.mrt2.collider"
 )
 
 # ─── Collider React UI Build Target ───────────────────────────────────────────
