@@ -11,3 +11,7 @@ allowBuilds:
   '@swc/core': true
   esbuild: true
   lefthook: true
+
+overrides:
+  'source-map-js@<1.2.2': '>=1.2.2'
+  'postcss-selector-parser@<6.1.5': '>=6.1.5'
